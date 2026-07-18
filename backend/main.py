@@ -521,11 +521,13 @@ def dossier_index(me: dict = Me):
     return {"documents": docs, "tasks": tasks}
 
 
+# Translation keys, not prose: the shop floor reads these in FR, EN or AR and
+# the server has no business choosing which.
 STATIONS = [
-    {"code": "vide", "label": "Vide de ligne", "icon": "🧹", "stage": "fabrication"},
-    {"code": "pesee", "label": "Pesée / matières", "icon": "⚖️", "stage": "fabrication"},
-    {"code": "qc", "label": "Contrôle contenance", "icon": "🔬", "stage": "qualite"},
-    {"code": "sign", "label": "Signer / libérer", "icon": "✍️", "stage": None},
+    {"code": "vide", "key": "station_vide", "icon": "🧹", "stage": "fabrication"},
+    {"code": "pesee", "key": "station_pesee", "icon": "⚖️", "stage": "fabrication"},
+    {"code": "qc", "key": "station_qc", "icon": "🔬", "stage": "qualite"},
+    {"code": "sign", "key": "station_sign", "icon": "✍️", "stage": None},
 ]
 
 
@@ -544,8 +546,8 @@ def codes(batch_id: int, me: dict = Me):
     if not b:
         raise HTTPException(404, "batch not found")
     lot = {"data": f"BT:LOT:{batch_id}", "label": f"Lot {b['lot_name']}", "kind": "lot"}
-    stations = [{"data": f"BT:ST:{s['code']}", "label": s["label"], "icon": s["icon"], "kind": "station"}
-                for s in STATIONS]
+    stations = [{"data": f"BT:ST:{s['code']}", "key": s["key"], "icon": s["icon"],
+                 "kind": "station"} for s in STATIONS]
     materials = [{"data": f"BT:MAT:{d['id']}", "label": d["material"], "kind": "material"}
                  for d in b["dispense"]]
     return {"lot": lot, "stations": stations, "materials": materials}

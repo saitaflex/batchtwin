@@ -12,30 +12,46 @@ let TOASTT;
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(TOASTT); TOASTT = setTimeout(() => t.classList.remove("show"), 2200); }
 function buzz() { if (navigator.vibrate) navigator.vibrate(60); }
 
-// identities — note the polyvalent user holds several roles (role-by-sector, not role-per-person)
-const USERS = [
-  {id: "prod.karim", nameKey: "floor_user_prod", roles: ["r_prod"]},
-  {id: "cq.sana", nameKey: "floor_user_cq", roles: ["r_cq"]},
-  {id: "smq.leila", nameKey: "floor_user_smq", roles: ["smq"]},
-  {id: "prt.mona", nameKey: "floor_user_prt", roles: ["prt"]},
-  {id: "poly.yassine", nameKey: "floor_user_poly", roles: ["r_prod", "r_cq"]},
-];
+/* Identity comes from the SESSION, exactly as on /app. The picker that used to
+   live here let anyone claim any role -- meaningless now that the server derives
+   the actor from the token, and misleading while it stayed on screen. */
+const ROLE_LONG = {
+  r_prod: "R. PROD · Responsable Production",
+  r_cq: "R. CQ · Responsable Contrôle Qualité",
+  smq: "SMQ · Assurance Qualité",
+  prt: "PRT · Pharmacien Responsable Technique",
+};
 const STAGE_LABEL = (name) => T(`stage_${name}`);
 const STAGE_ROLE = {fabrication: "r_prod", cond_primaire: "r_prod",
                     cond_secondaire: "r_prod", qualite: "r_cq", liberation: "prt"};
 const SIGN_MEANING = (stage) => T(`sign_${stage}`);
 
 const S = {user: null, bid: null, data: null, codes: null, screen: "home", matId: null};
-const me = () => ({user: S.user.id, role: S.user.roles[0]});
-function userLabel(u) { return T(u.nameKey); }
-function getUsers() { return USERS.map(u => ({...u, name: userLabel(u)})); }
+/* The body's actor is ignored server-side; this keeps the shape callers expect. */
+const me = () => ({user: S.user.username, role: S.user.role});
+
+function paintWhoami() {
+  const u = S.user;
+  $("#me-av").textContent = (u.full_name || u.username).trim().charAt(0).toUpperCase();
+  $("#me-name").textContent = u.full_name || u.username;
+  $("#me-role").textContent = ROLE_LONG[u.role] || u.role;
+}
 
 async function boot() {
-  const sel = $("#user");
-  const users = getUsers();
-  sel.innerHTML = users.map((u, i) => `<option value="${i}">${u.name}</option>`).join("");
-  S.user = users[0];
-  sel.onchange = () => { S.user = users[+sel.value]; render(); };
+  S.user = await bt.me();
+  if (!S.user) return;              // bt.me() has already sent us to the gate
+  paintWhoami();
+  $("#logout").onclick = async () => {
+    try { await api("/api/logout?token=" + encodeURIComponent(bt.token()), {}); } catch (e) {}
+    localStorage.removeItem(bt.TOKEN_KEY);
+    location.replace("/app");
+  };
+  $("#theme").onclick = () => {
+    const r = document.documentElement;
+    const next = r.getAttribute("data-theme") === "light" ? "dark" : "light";
+    r.setAttribute("data-theme", next);
+    localStorage.setItem("bt_theme", next);
+  };
   let list = await api("/api/batches");
   if (!list.length) { await api("/api/seed?reset=true", {}); list = await api("/api/batches"); }
   S.batches = list;
@@ -96,7 +112,9 @@ function home() {
   const relBadge = b.state === "released" ? `<span class="pill released">${T("floor_lot_status_released")}</span>` : `<span class="pill open">${T("floor_lot_status_open")}</span>`;
   M.append(el(`<div class="lotbar"><div><b>${T("floor_lot_label")} ${b.lot_name}</b><div class="s">${b.product} · ${b.qty_target} u.</div></div>${relBadge}</div>`));
   if (S.batches && S.batches.length > 1) {
-    const sel = el(`<select style="width:100%;font-size:15px;padding:11px;border-radius:12px;background:var(--surface);color:var(--ink);border:1px solid var(--border)">
+    const sel = el(`<select class="lotsel" style="width:100%;min-height:56px;font:inherit;font-size:16px;
+      padding:0 14px;border-radius:14px;background:var(--fill);color:var(--ink);
+      border:1px solid var(--border)">
       ${S.batches.map(x => `<option value="${x.id}" ${x.id === S.bid ? "selected" : ""}>Lot ${x.lot_name} — ${x.product}</option>`).join("")}</select>`);
     sel.onchange = (e) => { S.bid = +e.target.value; reload(); };
     M.append(sel);
@@ -107,7 +125,7 @@ function home() {
     <h2>${T("floor_scan_title")}</h2><div class="cap">${T("floor_scan_sub")}</div>
     <div class="scanbox" id="sb" style="display:none"><video id="vid" playsinline muted></video><div class="frame"></div></div>
     <div style="display:flex;gap:8px;margin:10px 0"><button class="btn teal" id="cam">📷 ${T("floor_scan_btn")}</button></div>
-    <div class="manual"><input id="mc" placeholder="${T("floor_scan_placeholder")}" autocomplete="off" autocapitalize="off"><button class="btn" id="mcgo" style="width:auto;padding:0 18px">${T("floor_scan_manual")}</button></div>
+    <div class="manual"><input id="mc" placeholder="${T("floor_scan_placeholder")}" autocomplete="off" autocapitalize="off"><button class="btn" id="mcgo">${T("floor_scan_manual")}</button></div>
     <div class="hint" style="margin-top:8px">${T("floor_scan_hint")}</div>
   </div>`);
   M.append(scan);
@@ -120,7 +138,7 @@ function home() {
   const tiles = S.codes.stations.map(s => {
     const code = s.data.split(":")[2];
     return `<div class="tile ${done[code] ? "done" : ""}" data-st="${code}">
-      <div class="ic">${s.icon}</div><div class="lb">${s.label}</div><div class="st">${done[code] ? T("floor_station_done") : T("floor_station_open")}</div></div>`;
+      <div class="ic">${s.icon}</div><div class="lb">${T(s.key)}</div><div class="st">${done[code] ? T("floor_station_done") : T("floor_station_open")}</div></div>`;
   }).join("");
   const grid = el(`<div class="grid">${tiles}</div>`);
   grid.querySelectorAll(".tile").forEach(t => t.onclick = () => go(t.dataset.st));
@@ -229,7 +247,7 @@ function sign() {
   order.forEach((st, i) => {
     const isSigned = b.stages.find(x => x.name === st).status === "signed";
     const prevOk = i === 0 || b.stages.find(x => x.name === order[i - 1]).status === "signed";
-    const canRole = S.user.roles.includes(STAGE_ROLE[st]);
+    const canRole = [S.user.role].includes(STAGE_ROLE[st]);
     const enabled = !isSigned && prevOk && canRole && b.state !== "released";
     const dot = isSigned ? "var(--good)" : prevOk ? "var(--series)" : "var(--muted)";
     const sub = isSigned ? `${T("floor_sign_signed")} — ${signed[st].user}` : canRole ? (prevOk ? T("floor_sign_ready") : T("floor_sign_required")) : TF("floor_sign_role", {role: STAGE_ROLE[st]});
@@ -256,7 +274,9 @@ function codes() {
 }
 
 window.onLangChange = () => {
-  if (S.user) S.user.name = userLabel(S.user);
+  // The operator's name comes from their account, so it does not translate --
+  // only their role label and the screen around it do.
+  if (S.user) paintWhoami();
   render();
 };
 
