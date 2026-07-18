@@ -66,21 +66,51 @@ const ROLE_LONG = {
   prt: "PRT · Pharmacien Responsable Technique",
 };
 
+/* Demo credentials, so a reviewer can be inside the app in one tap.
+   These still go through the real /api/login round-trip -- the shortcut is the
+   typing, not the authentication. A production build ships without this block. */
+const DEMO = [
+  {u: "prod.karim", p: "Fabrication#26", n: "Karim", r: "r_prod", c: "#6C63FF,#38BDF8"},
+  {u: "cq.sana",    p: "Controle#26",    n: "Sana",  r: "r_cq",   c: "#0ea5e9,#22d3ee"},
+  {u: "smq.leila",  p: "Qualite#26",     n: "Leïla", r: "smq",    c: "#a855f7,#6C63FF"},
+  {u: "prt.mona",   p: "Pharma#26",      n: "Mona",  r: "prt",    c: "#f59e0b,#f97316"},
+];
+
+async function doLogin(username, password) {
+  const btn = $("#lg-go");
+  btn.disabled = true;
+  try {
+    const r = await api("/api/login", {username, password});
+    localStorage.setItem(TOKEN_KEY, r.token);
+    ME = {username: r.username, full_name: r.full_name, role: r.role};
+    showApp();
+    await boot();
+  } catch (err) {
+    showGate(err.message);
+  } finally { btn.disabled = false; }
+}
+
+function renderQuickUsers() {
+  const box = $("#quick-users");
+  if (!box) return;
+  box.innerHTML = DEMO.map((d, i) => `
+    <button type="button" data-i="${i}">
+      <span class="av" style="background:linear-gradient(135deg,${d.c})">${esc(d.n.charAt(0))}</span>
+      <span class="tx"><b>${esc(d.n)}</b><small>${roleShort(d.r)}</small></span>
+    </button>`).join("");
+  box.querySelectorAll("button").forEach(b => b.onclick = () => {
+    const d = DEMO[+b.dataset.i];
+    $("#lg-user").value = d.u;
+    $("#lg-pass").value = d.p;      // visible in the field, so the password is learnable
+    doLogin(d.u, d.p);
+  });
+}
+
 function initLogin() {
-  $("#login-form").onsubmit = async (e) => {
+  renderQuickUsers();
+  $("#login-form").onsubmit = (e) => {
     e.preventDefault();
-    const btn = $("#lg-go");
-    btn.disabled = true;
-    try {
-      const r = await api("/api/login", {
-        username: $("#lg-user").value.trim(), password: $("#lg-pass").value});
-      localStorage.setItem(TOKEN_KEY, r.token);
-      ME = {username: r.username, full_name: r.full_name, role: r.role};
-      showApp();
-      await boot();
-    } catch (err) {
-      showGate(err.message);
-    } finally { btn.disabled = false; }
+    doLogin($("#lg-user").value.trim(), $("#lg-pass").value);
   };
   $("#logout").onclick = async () => {
     const t = localStorage.getItem(TOKEN_KEY);
@@ -99,6 +129,16 @@ function askPassword(what, whoLine) {
     $("#pw-what").textContent = what;
     $("#pw-who").textContent = whoLine;
     $("#pw-pass").value = ""; err.hidden = true;
+    // Demo affordance: show which password this account expects, with a fill
+    // button. The signature itself is unchanged -- the server still verifies it.
+    const demo = DEMO.find(d => d.u === ME.username);
+    const hint = $("#pw-demo");
+    if (demo) {
+      hint.innerHTML = `<span>${T("auth_demo_pw")}</span><code>${esc(demo.p)}</code>
+        <button type="button" id="pw-fill">${T("auth_fill")}</button>`;
+      hint.hidden = false;
+      $("#pw-fill").onclick = () => { $("#pw-pass").value = demo.p; $("#pw-pass").focus(); };
+    } else { hint.hidden = true; }
     m.hidden = false;
     setTimeout(() => $("#pw-pass").focus(), 50);
     const close = (value) => { m.hidden = true; form.onsubmit = null; resolve(value); };
