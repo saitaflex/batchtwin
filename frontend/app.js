@@ -482,6 +482,28 @@ function initTabs() {
   });
 }
 
+/* Any uncaught failure used to leave a blank page and a console message nobody
+   sees. Surface it instead, with the one action that fixes a stale client. */
+function fatal(err) {
+  console.error(err);
+  const host = $("#app-wrap") && !$("#app-wrap").hidden ? $("#app-wrap") : document.body;
+  if (document.getElementById("fatal")) return;
+  const d = document.createElement("div");
+  d.id = "fatal";
+  d.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:400;" +
+    "max-width:min(92vw,520px);padding:14px 18px;border-radius:14px;font-size:13px;line-height:1.6;" +
+    "background:#7f1d1d;color:#fff;box-shadow:0 16px 40px rgba(0,0,0,.45)";
+  d.innerHTML = `<b>⚠ ${T("err_title")}</b><br>
+    <span style="opacity:.85">${esc(err && err.message || String(err))}</span><br>
+    <a href="/reset" style="color:#fff;font-weight:700">${T("err_reset")}</a>
+    &nbsp;·&nbsp;<a href="#" id="fatal-x" style="color:#fff;opacity:.7">${T("err_dismiss")}</a>`;
+  host.appendChild(d);
+  $("#fatal-x").onclick = (e) => { e.preventDefault(); d.remove(); };
+}
+
+addEventListener("error", (e) => fatal(e.error || e.message));
+addEventListener("unhandledrejection", (e) => fatal(e.reason));
+
 async function refresh() {
   const [d, a, dossier] = await Promise.all([
     api(`/api/batch/${BID}`),
@@ -658,11 +680,14 @@ function renderStepper(b, energy) {
   (energy && energy.per_stage || []).forEach(s => kwhByStage[s.stage] = s.kwh);
   const me = actor();
   const order = STAGE_ORDER;
+  // A stage may legitimately be absent (older batch, partial migration). Treat a
+  // missing one as pending rather than letting the whole dashboard die on
+  // `undefined.status` -- an operator needs the dossier, not a blank screen.
+  const statusOf = (n) => (b.stages.find(s => s.name === n) || {}).status || "pending";
   $("#stepper").innerHTML = order.map((name, i) => {
-    const stage = b.stages.find(s => s.name === name);
-    const signed = stage.status === "signed";
+    const signed = statusOf(name) === "signed";
     const sig = sigByStage[name];
-    const active = !signed && (i === 0 || b.stages.find(s => s.name === order[i - 1]).status === "signed");
+    const active = !signed && (i === 0 || statusOf(order[i - 1]) === "signed");
     const canSign = active && !signed && b.state !== "released";
     let inner = "";
     if (signed) {

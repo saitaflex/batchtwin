@@ -156,6 +156,32 @@ class PackagingTests(unittest.TestCase):
         self.assertEqual(names, ["fabrication", "cond_primaire", "cond_secondaire",
                                  "qualite", "liberation"])
 
+    def test_a_batch_with_no_stage_rows_repairs_itself(self):
+        """A crashed reset or an interrupted migration used to leave a batch with
+        no stages, and the dashboard died on `undefined.status`."""
+        with store._write_conn() as c:
+            c.execute("DELETE FROM stage WHERE batch_id=?", (self.bid,))
+        names = [s["name"] for s in store.get_batch(self.bid)["stages"]]
+        self.assertEqual(names, store.STAGES)
+
+    def test_a_legacy_four_stage_batch_is_migrated_in_place(self):
+        """Batches created before the DCOI/DCOII split must stay openable."""
+        with store._write_conn() as c:
+            c.execute("DELETE FROM stage WHERE batch_id=?", (self.bid,))
+            for n in ("fabrication", "conditionnement", "qualite", "liberation"):
+                c.execute("INSERT INTO stage(batch_id, name) VALUES(?,?)", (self.bid, n))
+        names = [s["name"] for s in store.get_batch(self.bid)["stages"]]
+        self.assertEqual(names, store.STAGES, "repaired stages must be in lifecycle order")
+        self.assertNotIn("conditionnement", names, "the obsolete stage must be dropped")
+
+    def test_repair_never_touches_a_signed_stage(self):
+        _sign(self.bid, "fabrication", "r_prod")
+        with store._write_conn() as c:
+            c.execute("DELETE FROM stage WHERE batch_id=? AND name='qualite'", (self.bid,))
+        stages = {s["name"]: s["status"] for s in store.get_batch(self.bid)["stages"]}
+        self.assertEqual(stages["fabrication"], "signed")
+        self.assertEqual(stages["qualite"], "pending")
+
     def test_articles_are_split_across_the_two_dossiers(self):
         stages = {l["code"]: l["stage"] for l in store.packaging_balance(self.bid)["lines"]}
         self.assertEqual(stages["PK-FLA-200"], "cond_primaire")

@@ -997,13 +997,53 @@ def list_batches() -> list[dict]:
                         " of_ref, oc_ref, created_at FROM batch ORDER BY id ASC")
 
 
+def _stages_of(c, batch_id: int) -> list[dict]:
+    """Stages in lifecycle order, not insertion order.
+
+    A repaired batch has its added rows at the end of the table, so ordering by
+    id would present Liberation before Conditionnement.
+    """
+    order = {name: i for i, name in enumerate(STAGES)}
+    rows = _rows(c, "SELECT name, status FROM stage WHERE batch_id=?", batch_id)
+    return sorted(rows, key=lambda r: order.get(r["name"], 99))
+
+
+def _ensure_stages(batch_id: int, have: set[str]) -> None:
+    """Create any lifecycle stage this batch is missing, in canonical order.
+
+    Signed stages are never touched: this only ever adds rows.
+    """
+    with _write_conn() as c:
+        for name in STAGES:
+            if name not in have:
+                c.execute("INSERT INTO stage(batch_id, name) VALUES(?,?)"
+                          " ON CONFLICT(batch_id, name) DO NOTHING", (batch_id, name))
+        c.execute("DELETE FROM stage WHERE batch_id=? AND name NOT IN "
+                  "(" + ",".join("?" * len(STAGES)) + ") AND status<>'signed'",
+                  (batch_id, *STAGES))
+        audit(c, "system", "stage.repair",
+              {"added": sorted(set(STAGES) - have)}, batch_id)
+
+
 def get_batch(batch_id: int) -> dict | None:
     with _conn() as c:
         r = c.execute("SELECT * FROM batch WHERE id=?", (batch_id,)).fetchone()
         if not r:
             return None
         b = dict(r)
-        b["stages"] = _rows(c, "SELECT name, status FROM stage WHERE batch_id=? ORDER BY id", batch_id)
+        b["stages"] = _stages_of(c, batch_id)
+
+    # Self-heal a batch whose stage rows are missing or predate the DCOI/DCOII
+    # split. Without this the UI reads `undefined.status` and dies on a cryptic
+    # error instead of showing a dossier -- and every batch created before the
+    # split would be permanently unopenable.
+    have = {s["name"] for s in b["stages"]}
+    if have != set(STAGES):
+        _ensure_stages(batch_id, have)
+        with _conn() as c:
+            b["stages"] = _stages_of(c, batch_id)
+
+    with _conn() as c:
         b["checklist"] = _rows(c, "SELECT id, label, ok, note, escalated_to"
                                   " FROM checklist WHERE batch_id=? ORDER BY id", batch_id)
         b["dispense"] = _rows(c, "SELECT * FROM dispense WHERE batch_id=? ORDER BY id", batch_id)
