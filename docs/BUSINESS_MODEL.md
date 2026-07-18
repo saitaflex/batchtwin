@@ -1,10 +1,10 @@
 # BatchTwin — business model
 
-> **Every number in this document is either computed by the code in this
-> repository or cited from a public source.** Where a figure would have to be
-> invented — pricing, ROI, revenue — there is a blank and the formula that fills
-> it, not a guess. A confident number with no origin is the fastest way to lose
-> a jury that checks arithmetic.
+> **Every number here is computed by the code, cited from a public source, or —
+> for pricing only — derived from stated anchors and labelled an opening
+> position.** There is no ROI figure, because computing one needs four numbers
+> only the customer has; §3.4 is the worksheet, not a guess. A confident number
+> with no origin is the fastest way to lose a jury that checks arithmetic.
 
 ---
 
@@ -195,9 +195,9 @@ traceability.
 
 ## 4. Pricing
 
-**This document does not state a price, because no price has been tested.**
-What follows is the reasoning that produces one, so the number you eventually
-quote can be defended.
+**No price here has been tested with a customer.** What follows is the reasoning
+first and the number second, so the figure can be argued with rather than merely
+quoted.
 
 ### The anchors — both public, both verifiable
 
@@ -228,13 +228,33 @@ destroys the Part 11 identity model the whole compliance story rests on.
 A pricing model that undermines the product's core claim is the wrong model at
 any price.
 
-### Structure to quote, values to fill
+### The opening position
 
-| Plan | Scope | Annual |
+An evaluator is entitled to a number, so here is one — stated as what it is: an
+**opening position derived from the anchors above, not a validated price.**
+
+| Plan | Scope | Annual, per site |
 |---|---|---|
-| Essential | 1 line, limited product count | `____` |
-| Standard | 1 site, unlimited lines, + SPC, VÉRA, deviations | `____` |
-| Enterprise | Multi-site, + hybrid dashboard, SSO, priority SLA | `____ /site + ____ group` |
+| **Essential** | 1 production line, up to 5 products | **€6,000** |
+| **Standard** | 1 site, unlimited lines, + SPC, VÉRA, deviations, KPIs | **€12,000** |
+| **Enterprise** | Multi-site, + hybrid dashboard, SSO, priority SLA | **€9,000/site + €15,000 group** |
+
+**How Standard was derived, so it can be argued with:**
+
+- A ~100-person site pays roughly **€10–25k/year** for Odoo Enterprise at
+  Maghreb rates. €12,000 sits just above that — defensible, because BatchTwin
+  carries the regulatory record and Odoo does not.
+- MasterControl opens at **$1,000/month for one feature** and charges again per
+  site; a comparable eBR deployment lands in six figures. €12,000 is roughly a
+  tenth, which is the entire reason this product can exist for this segment.
+- At €1,000/month it is a line item a QA Director can approve without a board
+  paper. Above roughly €20,000 it becomes a capital decision with a committee,
+  and the sales cycle doubles.
+
+**What would change it:** three customer conversations. If Medicka says "we'd
+pay that without blinking", it is too low; if procurement stalls, Essential
+becomes the entry point and Standard the upgrade. Treat the table as the first
+offer in a negotiation, not a rate card.
 
 Services (implementation, validation pack, parallel-run support, training) are
 where early revenue actually comes from, and they scale with the number of

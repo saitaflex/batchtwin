@@ -116,7 +116,7 @@ Odoo (MO/BOM) → Production → Pack I → Pack II → Quality → Release
 | P | Levers |
 |---|---|
 | **Product** | Odoo-native eBR + VÉRA + carbon passport (EU DPP) |
-| **Price** | SME-affordable vs enterprise MES; demo hardware &lt; €50 |
+| **Price** | SME-affordable vs enterprise MES; reads existing qualified instruments (OPC UA, Modbus, S7) — no new hardware required |
 | **Place** | Plant floor (tablet /floor) + QA office; installable PWA |
 | **Promotion** | Live 3-min demo · Medicka design partner · Enactus / hackathons · Odoo partners · ROI (QA hours + material loss) |
 

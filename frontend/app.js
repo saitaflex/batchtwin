@@ -307,6 +307,60 @@ async function renderSiteKpis() {
     : `<div class="note">${T("kpi_no_lines")}</div>`;
 }
 
+/* ================== recovery advisor ==================
+   Adaptive in the way that matters here: it improves as QA closes deviations,
+   and it cites the lot every suggestion came from. An operator can go and read
+   that dossier, which is not something a probability score allows. */
+async function renderAdvisor() {
+  let d;
+  try { d = await api(`/api/batch/${BID}/advice`); } catch (e) { return; }
+  const card = $("#advisor-card");
+  const blocks = [];
+
+  const one = (a, preemptive) => {
+    const r = a.recommendation;
+    const head = preemptive
+      ? `<div class="trg">⚠ ${TF("adv_drift", {n: Math.round(a.trigger.minutes_to_breach || 0)})}</div>`
+      : `<div class="trg" style="color:var(--critical)">${esc(a.deviation.title)}</div>`;
+    if (!r) {
+      return `<div class="adv ${preemptive ? "preemptive" : ""}">${head}
+        <div class="adv-none">${esc(a.note)}</div></div>`;
+    }
+    const cases = a.cases.map(c => `
+      <div class="adv-case">
+        <span class="held ${c.held ? "y" : "n"}">${c.held ? T("adv_held") : TF("adv_recurred", {n: c.recurred})}</span>
+        <span class="t" title="${esc(c.capa)}">${esc(c.capa)}</span>
+        <span>${esc(c.lot)}</span>
+      </div>`).join("");
+    return `<div class="adv ${preemptive ? "preemptive" : ""}">${head}
+      <div class="rec">
+        <b>${T("dev_cause")}</b>${esc(r.root_cause)}
+        <b>${T("dev_capa")}</b>${esc(r.capa)}
+      </div>
+      <div class="src">
+        <span class="held ${r.held ? "y" : "n"}">${r.held ? T("adv_held") : TF("adv_recurred", {n: r.recurred})}</span>
+        <span>${TF("adv_from", {ref: esc(r.from_ref), lot: esc(r.from_lot),
+          who: esc(r.closed_by), when: (r.closed_at || "").slice(0, 10)})}</span>
+      </div>
+      <div class="adv-cases">${cases}</div></div>`;
+  };
+
+  if (d.drift) blocks.push(one(d.drift, true));
+  (d.open || []).forEach(a => blocks.push(one(a, false)));
+
+  card.hidden = !blocks.length;
+  if (!blocks.length) return;
+
+  const L = d.learning;
+  const badge = $("#adv-badge");
+  badge.className = "badge " + (L.ready ? "good" : "neutral");
+  badge.textContent = L.ready
+    ? TF("adv_learned", {n: L.cases, pct: L.effectiveness_pct})
+    : T("adv_learning");
+  $("#advisor").innerHTML = blocks.join("") +
+    `<div class="adv-none">${esc(L.note)}</div>`;
+}
+
 /* ================== migration: which record is legally binding ==================
    The whole parallel-run story was API-only. It is the answer to "how do we
    leave paper without stopping production", so it has to be demonstrable. */
@@ -1095,6 +1149,7 @@ function render(d, a, docs, tasks) {
   renderDeviations(d);
   renderPackaging(d);
   renderRunMode(d);
+  renderAdvisor();
   renderSPC(d.spc);
   renderEnergy(d.energy);
   renderAudit(a);

@@ -83,11 +83,23 @@ We are not starting from zero: a **working prototype already exists** — batch 
 - **30–48h — IoT & carbon:** wire one live sensor (ESP32 + energy clamp / USB scale, or a phone sensor) to a workstation; allocate energy to the batch; compute kWh and CO2 per unit and per dossier.
 - **48–72h — Polish & pitch:** cost / yield / energy / CO2 dashboards, UI refinement, PDF, and a scripted end-to-end demo.
 
-**Resources:** 1 laptop, free **Odoo Community**, an **ESP32 + clamp meter or USB scale (~€20–40)** or phone sensors, and an open-source stack (Python/FastAPI, SQLite/Postgres, a PWA front-end). Total hardware under €50.
+**Resources for the prototype bench:** 1 laptop, free **Odoo Community**, an ESP32 + clamp
+meter or USB scale (~€20–40), and an open-source stack (Python/FastAPI, SQLite/Postgres, PWA).
+
+**This is a demonstration rig, not a deployment proposal.** A GMP site does not put a
+breadboard on a validated line, and we do not ask it to. In production the same interface is
+fed by the instruments the plant already owns and already qualifies — OPC UA, Modbus TCP,
+Siemens S7/PROFINET, EtherNet/IP — because BatchTwin reads existing equipment rather than
+adding hardware to it. What the cheap rig proves is that the *ingestion path* works end to
+end; it is not what a customer installs.
 
 ## 6. Originality — why it's memorable
 
-- **Pharma-grade compliance on a supplement-SME budget.** We repurpose consumer tech — a phone camera for QR, a ~€5 microcontroller + clamp meter for energy, a USB scale for mass balance — to deliver 21 CFR Part 11-style integrity that normally costs six figures.
+- **Pharma-grade compliance on a supplement-SME budget.** The saving is in the SOFTWARE, not
+  in cheap instrumentation: 21 CFR Part 11-style integrity that normally costs six figures,
+  reading the plant's existing qualified equipment over standard industrial protocols. Where
+  a site has no instrument at all, a value can be entered by hand and is recorded as manual —
+  never silently treated as metered.
 - **The batch record becomes a sustainability passport.** By attaching energy and CO2 to each batch and dossier, BatchTwin already produces the provenance-and-carbon data the **EU Digital Product Passport** (under the Ecodesign for Sustainable Products Regulation) will soon require — turning a compliance chore into a future-proof asset.
 - **Nobody is left out.** Scan-to-act, bring-your-own-device-or-use-ours: an operator with no phone is as fast as one with a phone, and no task is interrupted when someone leaves the floor.
 

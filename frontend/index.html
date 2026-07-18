@@ -509,6 +509,26 @@
   .mig .st.parallel{background:color-mix(in srgb,var(--warning) 20%,transparent);color:var(--warning)}
   .mig .st.not_started{background:var(--fill-2);color:var(--muted)}
 
+  /* =============== recovery advisor =============== */
+  .adv{padding:14px;border-radius:14px;margin-bottom:10px;
+    background:var(--fill);border:1px solid var(--border);border-inline-start:3px solid var(--series)}
+  .adv.preemptive{border-inline-start-color:var(--warning);background:rgba(234,179,8,.07)}
+  .adv .trg{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--warning);margin-bottom:7px}
+  .adv .rec{font-size:14px;line-height:1.55}
+  .adv .rec b{display:block;font-size:12px;font-weight:700;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.04em;margin-top:9px}
+  .adv .src{margin-top:11px;padding-top:10px;border-top:1px solid var(--border);
+    font-size:11.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+  .adv .held{font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px}
+  .adv .held.y{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+  .adv .held.n{background:color-mix(in srgb,var(--critical) 16%,transparent);color:var(--critical)}
+  .adv-cases{margin-top:9px}
+  .adv-case{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:12px;
+    border-top:1px solid var(--grid);color:var(--ink-2)}
+  .adv-case .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .adv-none{font-size:12.5px;color:var(--muted);line-height:1.55}
+
   /* =============== migration mode + industry profile =============== */
   .rm{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
   .rm-opt{display:flex;align-items:center;gap:10px;min-height:56px;padding:10px 15px;cursor:pointer;
@@ -972,6 +992,13 @@
   </div>
 
   <div class="tab-panel" data-panel="quality">
+    <div class="card" id="advisor-card" hidden>
+      <h2><span data-i18n="adv_title">Conduite à tenir</span>
+        <span class="badge neutral" id="adv-badge">—</span></h2>
+      <div class="cap" data-i18n="adv_cap">Tiré des déviations déjà clôturées sur ce site — pas d'un modèle. Chaque suggestion cite le lot dont elle provient, et indique si le correctif a tenu.</div>
+      <div id="advisor"></div>
+    </div>
+
     <div class="card">
       <h2><span data-i18n="dev_title">Déviations &amp; CAPA</span>
         <span class="badge neutral" id="dev-badge">—</span></h2>

@@ -20,7 +20,7 @@ from typing import Any
 
 from . import (store, analytics, report, assistant, inventory, equipment,
                docx_parser, docx_forms, auth, anchor, products, label_scan,
-               industry, observability, resilience, telemetry)
+               industry, observability, resilience, telemetry, advisor)
 from .odoo_adapter import MockOdoo
 
 odoo = MockOdoo()
@@ -387,6 +387,31 @@ def telemetry_for_batch(batch_id: int, machine: str | None = None,
     return {"aggregate": telemetry.store.aggregate(batch_id),
             "series": telemetry.store.series(batch_id, machine, channel),
             "promoted": telemetry.promote_to_record(batch_id)}
+
+
+# ---- recovery advisor: what this plant did last time, and did it hold -------
+@app.get("/api/batch/{batch_id}/advice")
+def batch_advice(batch_id: int, machine: str | None = None, me: dict = Me):
+    """Recovery guidance drawn from the site's own closed deviations.
+
+    Two triggers: an open deviation (what was done about this before?), and an
+    SPC drift with no failure yet (what was done last time it drifted this way?).
+    Every suggestion cites the lot it came from -- an operator can go and read it.
+    """
+    b = store.get_batch(batch_id)
+    if not b:
+        raise HTTPException(404, "lot introuvable")
+    every = [x for x in (store.get_batch(r["id"]) for r in store.list_batches()) if x]
+
+    out = {"learning": advisor.learning_stats(every), "open": [], "drift": None}
+    for d in b.get("deviations") or []:
+        if d.get("status") == "open":
+            out["open"].append({"deviation": {"ref": d["ref"], "title": d["title"],
+                                              "severity": d["severity"]},
+                                **advisor.recommend(d, b, every, machine)})
+    spc = analytics.spc(b["qc"], b["target_fill_g"], _lsl(b), _usl(b))
+    out["drift"] = advisor.drift_advice(spc, b, every, machine)
+    return out
 
 
 # ---- management KPIs --------------------------------------------------------
