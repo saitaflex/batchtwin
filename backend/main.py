@@ -9,7 +9,7 @@ import random
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from typing import Any
@@ -661,7 +661,44 @@ def manifest():
 
 @app.get("/sw.js")
 def sw():
-    return FileResponse(FRONTEND / "sw.js", media_type="application/javascript")
+    # A cached service worker is how a stale build survives a deploy: tell the
+    # browser to always revalidate this one file.
+    return FileResponse(FRONTEND / "sw.js", media_type="application/javascript",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/reset")
+def reset_client():
+    """Escape hatch: unregister the service worker and drop every cache.
+
+    Browser caches are the one piece of state the server cannot reach, so when a
+    stale build is stuck this page fixes it without hunting through devtools.
+    """
+    return HTMLResponse("""<!doctype html><meta charset=utf-8>
+<title>BatchTwin — reset</title>
+<style>body{font-family:system-ui,sans-serif;background:#05070B;color:#fff;display:grid;
+place-items:center;height:100vh;margin:0;text-align:center}
+.c{max-width:420px;padding:28px}h1{font-size:20px;margin:0 0 8px}
+p{color:#A5B4C3;font-size:14px;line-height:1.6}code{color:#38BDF8}
+a{display:inline-block;margin-top:18px;padding:12px 22px;border-radius:999px;
+background:linear-gradient(100deg,#6C63FF,#38BDF8);color:#fff;text-decoration:none;font-weight:600}</style>
+<div class=c><h1 id=s>Nettoyage…</h1><p id=d>Suppression des caches et du service worker.</p>
+<a href="/app">Ouvrir /app</a></div>
+<script>
+(async () => {
+  let n = 0;
+  if ("serviceWorker" in navigator) {
+    for (const r of await navigator.serviceWorker.getRegistrations()) { await r.unregister(); n++; }
+  }
+  const keys = window.caches ? await caches.keys() : [];
+  for (const k of keys) await caches.delete(k);
+  try { localStorage.removeItem("bt_token"); } catch (e) {}
+  document.getElementById("s").textContent = "Cache vidé";
+  document.getElementById("d").innerHTML =
+    n + " service worker(s) désinscrit(s), " + keys.length + " cache(s) supprimé(s).<br>" +
+    "Ouvrez <code>/app</code> — la version actuelle sera chargée.";
+})();
+</script>""")
 
 
 @app.get("/logo/{name}")

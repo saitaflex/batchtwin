@@ -326,7 +326,30 @@ const ham=document.getElementById("ham"),mmenu=document.getElementById("mmenu");
 if(ham){ham.onclick=()=>mmenu.classList.toggle("open");
   mmenu.querySelectorAll("a").forEach(a=>a.addEventListener("click",()=>mmenu.classList.remove("open")));}
 /* PWA install (Android / desktop) */
-if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}));}
+
+/* Register the service worker, and take an update the moment one exists.
+   Without the reload-on-controllerchange below, a new deploy sits in "waiting"
+   until every tab is closed -- which is exactly how you end up staring at an
+   old build and wondering why your changes vanished. */
+if ("serviceWorker" in navigator) {
+  addEventListener("load", async () => {
+    try {
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      reg.addEventListener("updatefound", () => {
+        const sw = reg.installing;
+        if (sw) sw.addEventListener("statechange", () => {
+          if (sw.state === "installed" && navigator.serviceWorker.controller) sw.postMessage("skipWaiting");
+        });
+      });
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!reloaded) { reloaded = true; location.reload(); }
+      });
+      reg.update();
+    } catch (e) {}
+  });
+}
+
 /* reveal on view */
 const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add("in");io.unobserve(e.target);}}),{threshold:.12});
 document.querySelectorAll("[data-reveal]").forEach((el,i)=>{el.style.transitionDelay=(i%6*60)+"ms";io.observe(el);});

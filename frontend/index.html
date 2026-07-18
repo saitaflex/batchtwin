@@ -809,7 +809,30 @@
   <span data-i18n="off_banner">⚠ Hors ligne — la saisie est mise en file d'attente, la signature nécessite le réseau.</span>
   <span class="n" id="off-count">0</span>
 </div>
-<script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}))}</script>
+<script>
+/* Register the service worker, and take an update the moment one exists.
+   Without the reload-on-controllerchange below, a new deploy sits in "waiting"
+   until every tab is closed -- which is exactly how you end up staring at an
+   old build and wondering why your changes vanished. */
+if ("serviceWorker" in navigator) {
+  addEventListener("load", async () => {
+    try {
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      reg.addEventListener("updatefound", () => {
+        const sw = reg.installing;
+        if (sw) sw.addEventListener("statechange", () => {
+          if (sw.state === "installed" && navigator.serviceWorker.controller) sw.postMessage("skipWaiting");
+        });
+      });
+      let reloaded = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!reloaded) { reloaded = true; location.reload(); }
+      });
+      reg.update();
+    } catch (e) {}
+  });
+}
+</script>
 <script src="/i18n.js"></script>
 <script src="/app.js"></script>
 </body>
