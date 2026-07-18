@@ -136,13 +136,15 @@
 <script src="/vendor/prop-types.js"></script>
 <script src="/vendor/recharts.js"></script>
 <script src="/vendor/babel.js"></script>
+<script src="/session.js"></script>
 <script src="/i18n.js"></script>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef } = React;
 const R = Recharts;
 const { ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea } = R;
 const C = { mint:"#56cca9", red:"#ff4b1e", gold:"#ffbd12", blue:"#5b8cff", violet:"#8f7bff", ink2:"#c9ccd6", mut:"#8a8f9c", line:"rgba(255,255,255,.10)", panel:"#18191f" };
-const api = (u, b) => fetch(u, b ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)} : {}).then(r => { if(!r.ok) throw new Error(r.status); return r.json(); });
+/* shared authenticated client -- see frontend/session.js */
+const api = (u, b) => bt.api(u, b);
 const T = (k) => (window.t ? window.t(k) : k);
 const TF = (k, v) => (window.tf ? window.tf(k, v) : k);
 const eur = (v) => v==null ? "—" : "€"+Number(v).toLocaleString("fr-FR",{maximumFractionDigits:0});

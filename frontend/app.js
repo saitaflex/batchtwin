@@ -15,11 +15,11 @@ let FILL_UNIT = "mL";
 let ME = null;
 const actor = () => ({user: ME.username, role: ME.role});
 /* Every call carries the session token. The server derives who you are from it
-   and ignores any identity in the body, so the UI cannot assert a role. */
-const authHeaders = () => {
-  const t = localStorage.getItem(TOKEN_KEY);
-  return t ? {Authorization: "Bearer " + t} : {};
-};
+   and ignores any identity in the body, so the UI cannot assert a role.
+   The header is built by the shared client (session.js) so there is exactly one
+   implementation; this page keeps its own 401 policy because it IS the login
+   gate -- redirecting to itself would loop. */
+const authHeaders = () => window.bt.authHeaders();
 
 const api = async (url, body) => {
   const opts = body
@@ -60,6 +60,8 @@ async function startSession() {
 }
 
 function showGate(msg) {
+  const reason = new URLSearchParams(location.search).get("reason");
+  if (!msg && reason) msg = reason === "expired" ? T("auth_expired") : T("auth_needed");
   $("#gate").hidden = false;
   $("#app-wrap").hidden = true;
   const err = $("#lg-err");
@@ -100,6 +102,12 @@ async function doLogin(username, password) {
     const r = await api("/api/login", {username, password});
     localStorage.setItem(TOKEN_KEY, r.token);
     ME = {username: r.username, full_name: r.full_name, role: r.role};
+    // Came from /floor, /vera or /projections? Go back where they were.
+    const next = new URLSearchParams(location.search).get("next");
+    if (next && next.startsWith("/") && !next.startsWith("//")) {
+      location.replace(next);
+      return;
+    }
     showApp();
     await boot();
   } catch (err) {

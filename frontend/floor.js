@@ -4,11 +4,9 @@ const $ = (s) => document.querySelector(s);
 const M = $("#main");
 const T = (k) => (window.t ? window.t(k) : k);
 const TF = (k, v) => (window.tf ? window.tf(k, v) : k);
-const api = async (u, b) => {
-  const r = await fetch(u, b ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(b)} : {});
-  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.status); }
-  return r.json();
-};
+/* One authenticated client for every page (frontend/session.js). This page had
+   its own copy and silently died on 401 when the API moved behind a login. */
+const api = (u, b) => bt.api(u, b);
 const num = (v, d = 1) => v == null ? "—" : Number(v).toLocaleString("fr-FR", {minimumFractionDigits: d, maximumFractionDigits: d});
 let TOASTT;
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(TOASTT); TOASTT = setTimeout(() => t.classList.remove("show"), 2200); }

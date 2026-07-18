@@ -940,18 +940,18 @@ def assistant_report(batch_id: int, lang: str = "fr", me: dict = Me):
 
 # ---- VERA: self-correcting inventory brain ----------------------------------
 @app.get("/api/vera/overview")
-def vera_overview(product: str | None = None):
+def vera_overview(product: str | None = None, me: dict = Me):
     v = inventory.VERA
     return {"kpis": v.kpis(product), "decisions": v.decision_queue(product), "products": v.products()}
 
 
 @app.get("/api/vera/skus")
-def vera_skus(product: str | None = None):
+def vera_skus(product: str | None = None, me: dict = Me):
     return inventory.VERA.sku_list(product)
 
 
 @app.get("/api/vera/sku/{code}")
-def vera_sku(code: str):
+def vera_sku(code: str, me: dict = Me):
     p = inventory.VERA.project(code)
     if not p:
         raise HTTPException(404, "unknown material")
@@ -959,7 +959,7 @@ def vera_sku(code: str):
 
 
 @app.get("/api/vera/forecast/{fg}")
-def vera_forecast(fg: str):
+def vera_forecast(fg: str, me: dict = Me):
     fs = inventory.VERA.forecast_series(fg)
     if not fs:
         raise HTTPException(404, "unknown finished good")
@@ -972,7 +972,7 @@ class VeraChatBody(BaseModel):
 
 
 @app.post("/api/vera/chat")
-def vera_chat(body: VeraChatBody):
+def vera_chat(body: VeraChatBody, me: dict = Me):
     try:
         return assistant.vera_chat(body.message, body.history)
     except assistant.AssistantOffline:
@@ -1032,6 +1032,11 @@ def dashboard():
 @app.get("/app.js")
 def appjs():
     return FileResponse(FRONTEND / "app.js")
+
+
+@app.get("/session.js")
+def session_js():
+    return FileResponse(FRONTEND / "session.js", media_type="application/javascript")
 
 
 @app.get("/i18n.js")

@@ -258,3 +258,41 @@ class TelemetrySeparationTests(unittest.TestCase):
         self.tel.prune(days=30)
         self.assertEqual(self.tel.stats()["readings"], 10,
                          "old raw readings age out; the dossier keeps the aggregate")
+
+
+class PageAuthTests(unittest.TestCase):
+    """Every page must sit behind the same gate.
+
+    Regression guard: when the API moved behind authentication, only /app was
+    updated. /floor and /projections silently died on 401 and VERA's endpoints
+    were left open entirely -- stock levels and costs readable by anyone.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from fastapi.testclient import TestClient
+        from backend import main
+        tmp = Path(tempfile.mkdtemp())
+        store.DB_PATH = tmp / "t.db"
+        anchor.ANCHOR_PATH = tmp / "a.log"
+        store.init_db(reset=True)
+        observability.limiter.reset()
+        cls.client = TestClient(main.app)
+
+    def test_vera_endpoints_require_a_session(self):
+        """Inventory value, costs and forecasts are commercially sensitive."""
+        for url in ("/api/vera/overview", "/api/vera/skus", "/api/vera/sku/RM-EAU",
+                    "/api/vera/forecast/FG-MGB6-200"):
+            self.assertEqual(self.client.get(url).status_code, 401,
+                             f"{url} was readable without a session")
+
+    def test_the_shared_session_client_is_served(self):
+        r = self.client.get("/session.js")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Bearer", r.text)
+
+    def test_every_page_loads_the_shared_client(self):
+        """One implementation, used everywhere, is what stops this recurring."""
+        for page in ("/app", "/floor", "/vera", "/projections"):
+            html = self.client.get(page).text
+            self.assertIn("/session.js", html, f"{page} does not load session.js")

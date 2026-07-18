@@ -73,6 +73,7 @@
 <script src="/vendor/prop-types.js"></script>
 <script src="/vendor/recharts.js"></script>
 <script src="/vendor/babel.js"></script>
+<script src="/session.js"></script>
 <script src="/i18n.js"></script>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect } = React;
@@ -126,11 +127,12 @@ function App() {
   useEffect(() => {
     (async () => {
       try {
-        const list = await (await fetch("/api/batches")).json();
-        const bid = (list[0] || {}).id;
-        const b = await (await fetch(`/api/batch/${bid}`)).json();
-        setD(b);
-      } catch (e) { setErr(String(e)); }
+        // Authenticated client: raw fetch() here died on 401 when the API
+        // moved behind a login, and the page just showed "loading" forever.
+        const list = await bt.api("/api/batches");
+        if (!list.length) { setErr(T("proj_nobatch")); return; }
+        setD(await bt.api(`/api/batch/${list[list.length - 1].id}`));
+      } catch (e) { setErr(e.message || String(e)); }
     })();
   }, []);
   if (err) return <div className="loading">{TF("proj_error", {err})}</div>;
