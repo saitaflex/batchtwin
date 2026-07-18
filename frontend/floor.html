@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#2a78d6" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png" />
+<title>BatchTwin · Poste</title>
+<style>
+  :root{
+    color-scheme:light dark;
+    --plane:#f4f5f7; --surface:#ffffff; --surface-2:#eef0f3;
+    --ink:#0b0b0b; --ink-2:#52514e; --muted:#898781; --border:rgba(11,11,11,.12);
+    --series:#2a78d6; --teal:#1baf7a; --good:#0ca30c; --warning:#c98500; --crit:#d03b3b;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --plane:#0d0d0d; --surface:#1a1a19; --surface-2:#232321;
+    --ink:#fff; --ink-2:#c3c2b7; --muted:#898781; --border:rgba(255,255,255,.14);
+    --series:#3987e5;
+  }}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--plane);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;
+    padding-bottom:env(safe-area-inset-bottom)}
+  .app{max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+  header{position:sticky;top:0;z-index:10;background:var(--series);color:#fff;
+    padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top));
+    display:flex;align-items:center;justify-content:space-between;gap:10px}
+  header .t{font-weight:700;font-size:16px;line-height:1.1}
+  header .t small{display:block;font-weight:500;font-size:11.5px;opacity:.85}
+  header a{color:#fff;text-decoration:none;font-size:13px;background:rgba(255,255,255,.18);
+    padding:7px 11px;border-radius:9px}
+  .who{background:var(--surface-2);padding:10px 16px;display:flex;align-items:center;gap:10px;
+    border-bottom:1px solid var(--border);font-size:14px}
+  select{flex:1;font:inherit;font-size:15px;padding:10px;border-radius:10px;
+    background:var(--surface);color:var(--ink);border:1px solid var(--border)}
+  main{flex:1;padding:16px;display:flex;flex-direction:column;gap:14px}
+  .lotbar{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:12px 14px;display:flex;align-items:center;justify-content:space-between}
+  .lotbar b{font-size:16px} .lotbar .s{font-size:12px;color:var(--muted)}
+  .pill{font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px}
+  .pill.open{background:color-mix(in srgb,var(--warning) 22%,transparent);color:var(--warning)}
+  .pill.released{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .tile{background:var(--surface);border:1px solid var(--border);border-radius:16px;
+    padding:18px 14px;text-align:center;cursor:pointer;user-select:none;
+    display:flex;flex-direction:column;align-items:center;gap:8px;min-height:110px;justify-content:center;
+    transition:transform .06s}
+  .tile:active{transform:scale(.97)}
+  .tile .ic{font-size:30px} .tile .lb{font-weight:600;font-size:15px}
+  .tile .st{font-size:11.5px;color:var(--muted)}
+  .tile.done{border-color:var(--good)} .tile.done .ic::after{content:" ✓";color:var(--good)}
+
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+    min-height:56px;border:none;border-radius:14px;background:var(--series);color:#fff;
+    font:inherit;font-weight:700;font-size:17px;cursor:pointer}
+  .btn:active{filter:brightness(.94)} .btn:disabled{opacity:.4}
+  .btn.big{min-height:68px;font-size:19px}
+  .btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--border)}
+  .btn.teal{background:var(--teal)} .btn.good{background:var(--good)} .btn.crit{background:var(--crit)}
+  .btn.warn{background:var(--warning)}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px}
+  .card h2{margin:0 0 4px;font-size:18px} .card .cap{color:var(--muted);font-size:13px;margin-bottom:12px}
+  .back{background:none;border:none;color:var(--series);font:inherit;font-size:15px;font-weight:600;
+    padding:6px 0;cursor:pointer;display:flex;align-items:center;gap:6px}
+
+  .matrow{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+  .matrow:last-child{border-bottom:none}
+  .matrow .nm{flex:1;font-weight:600;font-size:15px} .matrow .tg{font-size:12px;color:var(--muted)}
+  .matrow.done{opacity:.6}
+  .num{width:100%;font:inherit;font-size:22px;text-align:center;padding:14px;border-radius:12px;
+    background:var(--surface-2);border:1px solid var(--border);color:var(--ink);
+    font-variant-numeric:tabular-nums}
+  label.fld{display:block;font-size:13px;color:var(--muted);margin:10px 0 5px}
+  .scanbox{position:relative;background:#000;border-radius:16px;overflow:hidden;aspect-ratio:4/3}
+  .scanbox video{width:100%;height:100%;object-fit:cover}
+  .scanbox .frame{position:absolute;inset:18% 14%;border:3px solid #fff;border-radius:14px;
+    box-shadow:0 0 0 100vmax rgba(0,0,0,.35)}
+  .manual{display:flex;gap:8px}
+  .manual input{flex:1;font:inherit;font-size:16px;padding:13px;border-radius:12px;
+    background:var(--surface);border:1px solid var(--border);color:var(--ink)}
+  .verdict{text-align:center;font-size:34px;font-weight:800;padding:18px;border-radius:14px;margin-top:6px}
+  .verdict.PASS{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
+  .verdict.FAIL{background:color-mix(in srgb,var(--crit) 16%,transparent);color:var(--crit)}
+  .qrgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .qrcard{background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;text-align:center}
+  .qrcard svg{width:100%;height:auto} .qrcard .lb{font-size:12px;color:#0b0b0b;margin-top:6px;font-weight:600}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--plane);
+    padding:12px 18px;border-radius:12px;font-size:14px;font-weight:600;z-index:50;opacity:0;
+    transition:opacity .2s;pointer-events:none;max-width:90%}
+  .toast.show{opacity:1}
+  .hint{font-size:12.5px;color:var(--muted);text-align:center}
+  .signrow{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)}
+  .signrow:last-child{border-bottom:none} .signrow .nm{flex:1}
+  .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .langsw{display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.16);padding:4px;border-radius:999px}
+  .langsw button{background:none;border:none;color:#fff;font:inherit;font-size:12px;font-weight:700;padding:5px 8px;border-radius:999px;cursor:pointer}
+  .langsw button.on{background:rgba(255,255,255,.24)}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="t">BatchTwin <small data-i18n="floor_sub">Mode poste · atelier</small></div>
+    <div class="langsw" style="display:flex;gap:6px">
+      <button data-lang="en">EN</button><button data-lang="fr">FR</button><button data-lang="ar">ع</button>
+    </div>
+    <a href="/app" data-i18n="floor_header_bureau">Bureau ↗</a>
+  </header>
+  <div class="who">
+    <span>👤</span>
+    <select id="user"></select>
+  </div>
+  <main id="main"></main>
+</div>
+<div class="toast" id="toast"></div>
+<script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}))}</script>
+<script src="/i18n.js"></script>
+<script src="/floor.js"></script>
+</body>
+</html>

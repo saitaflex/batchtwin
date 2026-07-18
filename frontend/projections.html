@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#2a78d6" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<title>BatchTwin · Projections IA</title>
+<style>
+  :root{
+    color-scheme:light;
+    --plane:#f7f8fa; --surface:#ffffff; --surface-2:#f0f2f5;
+    --ink:#10131a; --ink-2:#525a68; --muted:#8b93a1; --border:rgba(16,19,26,.10);
+    --series:#2a78d6; --teal:#1baf7a; --violet:#4a3aa7;
+    --good:#0ca30c; --warning:#eda100; --critical:#d03b3b;
+    --grid:#e6e8ec;
+  }
+  @media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){
+    color-scheme:dark;
+    --plane:#0c0e12; --surface:#161922; --surface-2:#1e222c;
+    --ink:#f2f4f8; --ink-2:#b6bdca; --muted:#78808e; --border:rgba(255,255,255,.10);
+    --series:#3987e5; --teal:#199e70; --violet:#9085e9; --grid:#262b36;
+  }}
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --plane:#0c0e12; --surface:#161922; --surface-2:#1e222c;
+    --ink:#f2f4f8; --ink-2:#b6bdca; --muted:#78808e; --border:rgba(255,255,255,.10);
+    --series:#3987e5; --teal:#199e70; --violet:#9085e9; --grid:#262b36;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--plane);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
+  .wrap{max-width:1120px;margin:0 auto;padding:22px 20px 70px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    padding-bottom:18px;border-bottom:1px solid var(--border);margin-bottom:8px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{width:40px;height:40px;border-radius:11px;background:var(--series);color:#fff;
+    display:grid;place-items:center;font-weight:800;font-size:19px}
+  h1{margin:0;font-size:20px;letter-spacing:-.02em}
+  header small{color:var(--ink-2);font-size:12.5px}
+  .lnk{display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-size:13px;font-weight:600;
+    padding:9px 13px;border-radius:10px;border:1px solid var(--border);color:var(--ink);background:var(--surface);cursor:pointer}
+  .lnk:hover{border-color:var(--series);color:var(--series)}
+  .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:26px 0 12px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media(max-width:820px){.kpis{grid-template-columns:1fr 1fr}}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px}
+  .kpi .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+  .kpi .v{font-size:27px;font-weight:750;margin-top:6px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .kpi .p{font-size:12px;color:var(--ink-2);margin-top:5px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px}
+  .panel h2{margin:0;font-size:15px;letter-spacing:-.01em}
+  .panel .sub{color:var(--muted);font-size:12px;margin:3px 0 14px}
+  .flag{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px}
+  .flag.warn{background:color-mix(in srgb,var(--warning) 20%,transparent);color:#8a6d00}
+  .flag.good{background:color-mix(in srgb,var(--good) 14%,transparent);color:var(--good)}
+  .loading{padding:60px;text-align:center;color:var(--muted)}
+  .foot{margin-top:14px;font-size:11.5px;color:var(--muted)}
+  .recharts-text{fill:var(--muted)}
+  .langsw{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .langsw button{border:1px solid var(--border);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer}
+  .langsw button.on{background:var(--series);color:#fff;border-color:var(--series)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="root"><div class="loading" data-i18n="proj_loading">Chargement des projections…</div></div>
+</div>
+<script src="/vendor/react.js"></script>
+<script src="/vendor/react-dom.js"></script>
+<script src="/vendor/prop-types.js"></script>
+<script src="/vendor/recharts.js"></script>
+<script src="/vendor/babel.js"></script>
+<script src="/i18n.js"></script>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+const R = Recharts;
+const { ResponsiveContainer, LineChart, Line, BarChart, Bar, ComposedChart, Area,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ReferenceArea, Cell } = R;
+
+const BATCHES_PER_WEEK = 10, WEEKS = 48;          // planning assumption for annual projection
+const ANNUAL = BATCHES_PER_WEEK * WEEKS;
+const T = (k) => (window.t ? window.t(k) : k);
+const TF = (k, v) => (window.tf ? window.tf(k, v) : k);
+const eur = (v) => v == null ? "—" : "€" + Number(v).toLocaleString("fr-FR", {maximumFractionDigits:0});
+const fr = (v, d=1) => v == null ? "—" : Number(v).toLocaleString("fr-FR", {minimumFractionDigits:d, maximumFractionDigits:d});
+
+function useTheme() {
+  const get = () => document.documentElement.getAttribute("data-theme")
+    || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const [t, setT] = useState(get());
+  useEffect(() => {
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const on = () => setT(get()); mq.addEventListener("change", on); return () => mq.removeEventListener("change", on);
+  }, []);
+  const toggle = () => { const nx = t === "dark" ? "light" : "dark"; document.documentElement.setAttribute("data-theme", nx); setT(nx); };
+  return [t, toggle];
+}
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function KPI({k, v, p}) { return (
+  <div className="kpi"><div className="k">{k}</div><div className="v">{v}</div><div className="p">{p}</div></div>
+); }
+
+function Panel({title, sub, right, children}) { return (
+  <div className="panel">
+    <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10}}>
+      <div><h2>{title}</h2><div className="sub">{sub}</div></div>{right}
+    </div>
+    {children}
+  </div>
+); }
+
+function App() {
+  const [t, toggle] = useTheme();
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState(null);
+  const [lang, setLang] = useState(window.i18n ? window.i18n.lang : "fr");
+  useEffect(() => {
+    const onLang = () => setLang(window.i18n ? window.i18n.lang : "fr");
+    window.onLangChange = onLang;
+    return () => { window.onLangChange = null; };
+  }, []);
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await (await fetch("/api/batches")).json();
+        const bid = (list[0] || {}).id;
+        const b = await (await fetch(`/api/batch/${bid}`)).json();
+        setD(b);
+      } catch (e) { setErr(String(e)); }
+    })();
+  }, []);
+  if (err) return <div className="loading">{TF("proj_error", {err})}</div>;
+  if (!d) return <div className="loading">{T("proj_loading")}</div>;
+
+  const ink = css("--ink-2"), grid = css("--grid"), series = css("--series"),
+        teal = css("--teal"), warn = css("--warning"), crit = css("--critical"),
+        good = css("--good"), violet = css("--violet"), surface = css("--surface");
+  const tip = {background: surface, border: `1px solid ${css("--border")}`, borderRadius: 10, fontSize: 12, color: css("--ink")};
+
+  const spc = d.spc, mb = d.mass_balance, en = d.energy, k = d.kpis;
+  const unit = d.batch.fill_unit || "mL";
+
+  // --- SPC contenance projection ---
+  const spcData = spc.points.map((p, i) => ({i: i + 1, mesure: p.mean}));
+  if (spc.forecast && spcData.length) {
+    const slope = spc.forecast.slope_g_per_sample, last = spcData[spcData.length - 1];
+    last.proj = last.mesure;
+    for (let s = 1; s <= 8; s++) spcData.push({i: spcData.length + 1, proj: +(last.mesure + slope * s).toFixed(1)});
+  }
+  const breach = spc.forecast ? Math.round(spc.forecast.minutes_to_spec_breach) : null;
+
+  // --- energy per dossier ---
+  const enData = en.complete ? en.per_stage.map(s => ({
+    dossier: {fabrication:T("stage_fabrication"), conditionnement:T("stage_conditionnement"), qualite:T("stage_qualite"), liberation:T("stage_liberation")}[s.stage] || s.stage,
+    kWh: s.kwh, CO2: s.co2_kg,
+  })) : [];
+
+  // --- cost breakdown ---
+  const costData = mb.complete ? [
+    {nom:T("proj_cost_theoretical"), val: mb.theoretical_cost, fill: series},
+    {nom:T("proj_cost_real"), val: mb.real_cost, fill: teal},
+    {nom:T("proj_cost_loss"), val: mb.loss_cost, fill: crit},
+  ] : [];
+
+  return (
+    <div>
+      <header>
+        <div className="brand">
+          <div className="logo">B</div>
+          <div><h1>{T("proj_title")}</h1><small>{TF("proj_subtitle", {lot: d.batch.lot_name, product: d.batch.product})}</small></div>
+        </div>
+        <div style={{display:"flex", gap:8, alignItems:"center"}}>
+          <div className="langsw">
+            <button data-lang="en">EN</button><button data-lang="fr">FR</button><button data-lang="ar">ع</button>
+          </div>
+          <button className="lnk" onClick={toggle}>◐ {T("proj_theme")}</button>
+          <a className="lnk" href="/app">← {T("proj_back")}</a>
+        </div>
+      </header>
+
+      <div className="eyebrow">{TF("proj_heading_yearly", {n: ANNUAL})}</div>
+      <div className="kpis">
+        <KPI k={T("proj_kpi_yield")} v={k.yield_pct == null ? "—" : fr(k.yield_pct,1)+" %"} p={`${k.good_units ?? "—"}/${k.target_units} ${T("lbl_units")}`} />
+        <KPI k={T("proj_kpi_cost")} v={eur(k.true_unit_material_cost)} p={T("proj_kpi_cost_p")} />
+        <KPI k={T("proj_kpi_loss")} v={mb.loss_cost==null?"—":eur(mb.loss_cost*ANNUAL)} p={`${eur(mb.loss_cost)} / ${T("lbl_lot")} × ${ANNUAL}`} />
+        <KPI k={T("proj_kpi_co2")} v={en.complete? fr(en.total_co2_kg*ANNUAL/1000,1)+" t":"—"} p={en.complete? `${fr(en.co2_g_per_unit,0)} g / ${T("lbl_unit")}`:T("proj_kpi_co2_p")} />
+      </div>
+
+      <div className="eyebrow">{T("proj_section_ops")}</div>
+      <div className="grid2">
+        <Panel title={T("proj_panel_spc_title")}
+               sub={T("proj_panel_spc_sub")}
+               right={breach ? <span className="flag warn">{TF("proj_flag_warn", {n: breach})}</span> : <span className="flag good">{T("proj_flag_stable")}</span>}>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={spcData} margin={{top:8,right:12,left:-8,bottom:0}}>
+              <CartesianGrid stroke={grid} strokeDasharray="3 3" vertical={false} />
+              <ReferenceArea y1={spc.lsl} y2={spc.usl} fill={good} fillOpacity={0.06} />
+              <ReferenceLine y={spc.usl} stroke={crit} strokeDasharray="5 4" label={{value:"USL", position:"right", fill:css("--muted"), fontSize:10}} />
+              <ReferenceLine y={spc.lsl} stroke={crit} strokeDasharray="5 4" label={{value:"LSL", position:"right", fill:css("--muted"), fontSize:10}} />
+              <ReferenceLine y={spc.norm} stroke={css("--muted")} strokeDasharray="2 3" />
+              <XAxis dataKey="i" tick={{fill:ink, fontSize:11}} tickLine={false} axisLine={{stroke:grid}} />
+              <YAxis domain={[spc.lsl-8, spc.usl+8]} tick={{fill:ink, fontSize:11}} tickLine={false} axisLine={false} width={40} />
+              <Tooltip contentStyle={tip} />
+              <Line type="monotone" dataKey="mesure" name={TF("proj_spc_series", {unit})} stroke={series} strokeWidth={2.4} dot={{r:3, fill:series}} isAnimationActive={false} />
+              <Line type="monotone" dataKey="proj" name={TF("proj_spc_projection", {unit})} stroke={warn} strokeWidth={2.4} strokeDasharray="6 4" dot={false} isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </Panel>
+
+        <Panel title={T("proj_panel_energy_title")} sub={T("proj_panel_energy_sub")}>
+          <ResponsiveContainer width="100%" height={250}>
+            <ComposedChart data={enData} margin={{top:8,right:8,left:-8,bottom:0}}>
+              <CartesianGrid stroke={grid} strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="dossier" tick={{fill:ink, fontSize:11}} tickLine={false} axisLine={{stroke:grid}} />
+              <YAxis tick={{fill:ink, fontSize:11}} tickLine={false} axisLine={false} width={40} />
+              <Tooltip contentStyle={tip} />
+              <Legend wrapperStyle={{fontSize:11}} />
+              <Bar dataKey="kWh" name={T("proj_energy_kwh")} fill={series} radius={[4,4,0,0]} maxBarSize={46} isAnimationActive={false} />
+              <Bar dataKey="CO2" name={T("proj_energy_co2")} fill={teal} radius={[4,4,0,0]} maxBarSize={46} isAnimationActive={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </Panel>
+
+        <Panel title={T("proj_panel_cost_title")} sub={T("proj_panel_cost_sub")}>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={costData} margin={{top:8,right:8,left:-8,bottom:0}}>
+              <CartesianGrid stroke={grid} strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="nom" tick={{fill:ink, fontSize:10.5}} tickLine={false} axisLine={{stroke:grid}} />
+              <YAxis tick={{fill:ink, fontSize:11}} tickLine={false} axisLine={false} width={48} />
+              <Tooltip contentStyle={tip} formatter={(v)=>eur(v)} />
+              <Bar dataKey="val" name={T("proj_cost_label")} radius={[4,4,0,0]} maxBarSize={70} isAnimationActive={false}>
+                {costData.map((c,i)=><Cell key={i} fill={c.fill} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="foot">{T("proj_cost_gap")} : <b>{mb.cost_gap==null?"—":eur(mb.cost_gap)}</b> / {T("lbl_lot")}.</div>
+        </Panel>
+
+        <Panel title={T("proj_panel_data_title")} sub={T("proj_panel_data_sub")}>
+          <div style={{display:"flex", flexDirection:"column", gap:8, fontSize:12.5, marginTop:4}}>
+            {[
+              [T("proj_data_odoo"), T("proj_data_odoo_sub"), series],
+              [T("proj_data_shop"), T("proj_data_shop_sub"), teal],
+              [T("proj_data_iot"), T("proj_data_iot_sub"), violet],
+              [T("proj_data_audit"), T("proj_data_audit_sub"), css("--muted")],
+              [T("proj_data_ai"), T("proj_data_ai_sub"), warn],
+            ].map(([a,b,c],i)=>(
+              <div key={i} style={{display:"flex", alignItems:"center", gap:10, padding:"9px 12px",
+                background:"var(--surface-2)", borderRadius:10, borderLeft:`3px solid ${c}`}}>
+                <b style={{minWidth:170}}>{a}</b><span style={{color:"var(--ink-2)"}}>{b}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+      <div className="foot" style={{marginTop:22}}>
+        {TF("proj_foot", {batches: BATCHES_PER_WEEK, weeks: WEEKS})}
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
