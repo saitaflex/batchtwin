@@ -3,7 +3,7 @@
   const I18N = {
     en: {
       brand_sub: "the living batch record · for Medicka Laboratories",
-      nav_vera: "🧠 VÉRA · Stock", nav_proj: "📈 AI Projections", nav_floor: "📱 Floor mode",
+      nav_vera: "🧠 VÉRA · Stock", nav_proj: "📈 Projections", nav_floor: "📱 Floor mode",
       nav_pdf: "⬇ Batch Record (PDF)", nav_reset: "↻ New batch",
       who_lot: "Batch:", who_user: "Signed in:",
       cop_title: "🧠 AI copilot", cop_report: "📄 Batch report (AI)",
@@ -258,7 +258,7 @@
       floor_sign_title: "Sign / release", floor_sign_connected: "Connected:", floor_sign_signed: "signed", floor_sign_ready: "ready to sign", floor_sign_required: "previous step required", floor_sign_role: "role {role} required", floor_sign_release: "Lot released ✓", floor_sign_signed_msg: "Signed", floor_sign_refused: "Refused: ", floor_sign_unknown: "Unknown code: ", floor_sign_loaded: "Batch loaded",
       floor_code_unknown: "Unrecognized code: {data}", floor_code_unavailable: "Camera access unavailable (http/permission) — manual entry",
       floor_code_not_supported: "QR camera not supported here — use the keyboard or scanner",
-      proj_title: "AI projections", proj_subtitle: "BatchTwin · batch {lot} · {product}", proj_theme: "Theme", proj_back: "Office", proj_heading_yearly: "Real cost & footprint — projected to the year ({n} batches/year)",
+      proj_title: "Annual projection", proj_subtitle: "BatchTwin · batch {lot} · {product}", proj_theme: "Theme", proj_back: "Office", proj_heading_yearly: "Real cost & footprint — projected to the year ({n} batches/year)",
       proj_kpi_yield: "Yield", proj_kpi_cost: "Material cost / unit", proj_kpi_loss: "Material loss / year", proj_kpi_co2: "CO₂ / year", proj_kpi_yield_p: "realized yield", proj_kpi_cost_p: "real, losses included", proj_kpi_loss_p: "per batch × annual", proj_kpi_co2_p: "energy data available",
       proj_section_ops: "Operational forecasts", proj_panel_spc_title: "Fill volume — expected drift (SPC)", proj_panel_spc_sub: "Real measurements + trend projection toward specifications", proj_flag_stable: "✓ stable", proj_flag_warn: "⚠ threshold in ~{n} min",
       proj_panel_energy_title: "Energy & CO₂ per dossier", proj_panel_energy_sub: "IoT consumption allocated to each step of the lot", proj_panel_cost_title: "Material cost — theoretical vs real", proj_panel_cost_sub: "What Odoo plans vs what is actually consumed", proj_cost_gap: "Real vs theoretical gap", proj_panel_data_title: "Data flow → AI", proj_panel_data_sub: "How BatchTwin powers the copilot and forecasts",
@@ -272,7 +272,7 @@
     },
     fr: {
       brand_sub: "le dossier de lot vivant · pour Laboratoires Medicka",
-      nav_vera: "🧠 VÉRA · Stock", nav_proj: "📈 Projections IA", nav_floor: "📱 Mode poste",
+      nav_vera: "🧠 VÉRA · Stock", nav_proj: "📈 Projections", nav_floor: "📱 Mode poste",
       nav_pdf: "⬇ Dossier de Lot (PDF)", nav_reset: "↻ Nouveau lot",
       who_lot: "Lot :", who_user: "Connecté :",
       cop_title: "🧠 Copilote IA", cop_report: "📄 Rapport de lot (IA)",
@@ -521,7 +521,7 @@
       floor_qc_title: "Contrôle contenance", floor_qc_sub: "10 flacons — contenance", floor_qc_auto: "Auto", floor_qc_validate: "Valider le relevé", floor_qc_required: "Saisir les mesures", floor_qc_pass: "✓ CONFORME", floor_qc_fail: "✗ HORS TOLÉRANCE",
       floor_sign_title: "Signer / libérer", floor_sign_connected: "Connecté :", floor_sign_signed: "signé", floor_sign_ready: "prêt à signer", floor_sign_required: "étape précédente requise", floor_sign_role: "rôle {role} requis", floor_sign_release: "Lot libéré ✓", floor_sign_signed_msg: "Signé", floor_sign_refused: "Refusé : ", floor_sign_unknown: "Code inconnu : ", floor_sign_loaded: "Lot chargé",
       floor_code_unknown: "Code non reconnu : {data}", floor_code_unavailable: "Accès caméra indisponible (http/permission) — saisie manuelle", floor_code_not_supported: "Caméra QR non supportée ici — utilisez la saisie ou la douchette",
-      proj_title: "Projections IA", proj_subtitle: "BatchTwin · lot {lot} · {product}", proj_theme: "Thème", proj_back: "Bureau", proj_heading_yearly: "Coût & empreinte réels — projetés à l'année ({n} lots/an)",
+      proj_title: "Projection annuelle", proj_subtitle: "BatchTwin · lot {lot} · {product}", proj_theme: "Thème", proj_back: "Bureau", proj_heading_yearly: "Coût & empreinte réels — projetés à l'année ({n} lots/an)",
       proj_kpi_yield: "Rendement", proj_kpi_cost: "Coût matière / unité", proj_kpi_loss: "Perte matière / an", proj_kpi_co2: "CO₂ / an", proj_kpi_yield_p: "réel, pertes incluses", proj_kpi_cost_p: "réel, pertes incluses", proj_kpi_loss_p: "par lot × annuel", proj_kpi_co2_p: "données énergie disponibles",
       proj_section_ops: "Prévisions opérationnelles", proj_panel_spc_title: "Contenance — dérive prévue (SPC)", proj_panel_spc_sub: "Mesures réelles + projection de la tendance vers les spécifications", proj_flag_stable: "✓ stable", proj_flag_warn: "⚠ seuil dans ~{n} min",
       proj_panel_energy_title: "Énergie & CO₂ par dossier", proj_panel_energy_sub: "Consommation IoT allouée à chaque étape du lot", proj_panel_cost_title: "Coût matière — théorique vs réel", proj_panel_cost_sub: "Ce qu'Odoo prévoit vs ce qui est réellement consommé", proj_cost_gap: "Écart réel vs théorique", proj_panel_data_title: "Flux données → IA", proj_panel_data_sub: "Comment BatchTwin alimente le copilote et les prévisions",
@@ -535,7 +535,7 @@
     },
     ar: {
       brand_sub: "سجل الدفعة الحيّ · لمخابر Medicka",
-      nav_vera: "🧠 VÉRA · المخزون", nav_proj: "📈 توقّعات الذكاء", nav_floor: "📱 وضع الورشة",
+      nav_vera: "🧠 VÉRA · المخزون", nav_proj: "📈 التوقّعات", nav_floor: "📱 وضع الورشة",
       nav_pdf: "⬇ سجل الدفعة (PDF)", nav_reset: "↻ دفعة جديدة",
       who_lot: "الدفعة:", who_user: "المستخدم:",
       cop_title: "🧠 المساعد الذكي", cop_report: "📄 تقرير الدفعة (ذكاء)",
@@ -784,7 +784,7 @@
       floor_qc_title: "مراقبة حجم التعبئة", floor_qc_sub: "10 قوارير — حجم التعبئة", floor_qc_auto: "تلقائي", floor_qc_validate: "تأكيد القراءة", floor_qc_required: "أدخل القياسات", floor_qc_pass: "✓ مطابق", floor_qc_fail: "✗ خارج الحدود",
       floor_sign_title: "توقيع / إفراج", floor_sign_connected: "متصل :", floor_sign_signed: "موقّع", floor_sign_ready: "مستعد للتوقيع", floor_sign_required: "الخطوة السابقة مطلوبة", floor_sign_role: "الدور {role} مطلوب", floor_sign_release: "الدفعة مُفرَج عنها ✓", floor_sign_signed_msg: "تم التوقيع", floor_sign_refused: "رفض : ", floor_sign_unknown: "رمز غير معروف : ", floor_sign_loaded: "تم تحميل الدفعة",
       floor_code_unknown: "رمز غير معروف : {data}", floor_code_unavailable: "الوصول إلى الكاميرا غير متاح (http/أو إذن) — إدخال يدوي", floor_code_not_supported: "كاميرا QR غير مدعومة هنا — استخدم الإدخال أو الماسح",
-      proj_title: "توقّعات الذكاء", proj_subtitle: "BatchTwin · دفعة {lot} · {product}", proj_theme: "السمة", proj_back: "المكتب", proj_heading_yearly: "التكلفة والبصمة الحقيقيان — متوقّعان على السنة ({n} دفعة/سنة)",
+      proj_title: "الإسقاط السنوي", proj_subtitle: "BatchTwin · دفعة {lot} · {product}", proj_theme: "السمة", proj_back: "المكتب", proj_heading_yearly: "التكلفة والبصمة الحقيقيان — متوقّعان على السنة ({n} دفعة/سنة)",
       proj_kpi_yield: "المردود", proj_kpi_cost: "تكلفة المواد / وحدة", proj_kpi_loss: "فاقد المواد / سنة", proj_kpi_co2: "CO₂ / سنة", proj_kpi_yield_p: "مردود فعلي", proj_kpi_cost_p: "حقيقي، مع الفاقد", proj_kpi_loss_p: "لكل دفعة × سنوي", proj_kpi_co2_p: "بيانات الطاقة متاحة",
       proj_section_ops: "توقعات تشغيلية", proj_panel_spc_title: "حجم التعبئة — الانحراف المتوقع (SPC)", proj_panel_spc_sub: "قياسات حقيقية + توقع الاتجاه نحو المواصفات", proj_flag_stable: "✓ مستقر", proj_flag_warn: "⚠ العتبة خلال ~{n} دقيقة",
       proj_panel_energy_title: "الطاقة و CO₂ لكل ملف", proj_panel_energy_sub: "استهلاك IoT مخصص لكل خطوة من الدفعة", proj_panel_cost_title: "تكلفة المواد — نظرية مقابل حقيقية", proj_panel_cost_sub: "ما يخططه Odoo مقابل ما يُستهلك فعلاً", proj_cost_gap: "الفارق الحقيقي مقابل النظري", proj_panel_data_title: "تدفق البيانات → الذكاء", proj_panel_data_sub: "كيف يغذي BatchTwin المساعد والتوقعات",

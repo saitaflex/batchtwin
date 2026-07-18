@@ -1,9 +1,9 @@
 # VÉRA — The Self-Correcting Inventory Brain
-### AI-driven raw-material forecasting & replenishment for SME food-supplement makers — that fixes the data before it forecasts.
+### Raw-material forecasting & replenishment for SME food-supplement makers — that fixes the data before it forecasts.
 
 *Sector: Industry · Inventory & Supply Chain   |   Design partner: Medicka Laboratories (Nabeul, Tunisia)   |   Team leader: Oussama Labidi   ·   Members: Salem Amara, Ahmed Hammami*
 
-> **Most inventory AI forecasts demand on numbers that are already wrong. VÉRA corrects reality first — real consumption, not theoretical recipes — then forecasts, sees expiry, and turns stock into a ranked decision queue.**
+> **Most inventory forecasting runs on numbers that are already wrong. VÉRA corrects reality first — real consumption, not theoretical recipes — then forecasts, sees expiry, and turns stock into a ranked decision queue.**
 
 > **⚠ Snapshot — superseded.** This document describes BatchTwin as submitted at
 > the idea stage. The software has moved on substantially since: authentication

@@ -263,10 +263,10 @@ per line and per lot: true material cost per unit, loss cost (the money that nev
 Odoo), yield, and the gap versus theoretical. Enterprise eBR systems *record* the batch;
 this one *prices* it as it happens.
 
-**Predictive SPC.** X̄/R control chart on the fill-volume check with Western Electric rules
-and a linear drift forecast that warns before the specification is breached. Control limits
-use the standard ASTM STP-15D / ISO 7870-2 constants, validated against a worked example in
-`tests/test_compliance.py::SPCValidationTests`. Presented as indicative, not a release
+**SPC with drift warning — statistics, not AI.** X̄/R control chart with Western Electric
+rules, plus an ordinary-least-squares fit that warns before the specification is breached.
+Control limits use the standard ASTM STP-15D / ISO 7870-2 constants, validated against a
+worked example in `tests/test_compliance.py::SPCValidationTests`. Indicative, not a release
 criterion.
 
 **Packaging article reconciliation.** DCOI and DCOII each carry their own balance:
@@ -282,14 +282,24 @@ OK / ALERTE / ALARME.
 kWh and gCO₂ **per unit produced** — a product-passport line framed for the EU Digital
 Product Passport.
 
-**AI copilot.** Local Ollama (`llama3.2` + `nomic-embed-text` for real RAG over an SOP
-corpus, cited sources, NDJSON streaming), grounded on live batch facts, trilingual. It is
-**advisory only and structurally cannot write**: a test asserts `assistant.py` contains no
+**AI — two models, and nothing else called AI.** The batch copilot is genuine RAG
+(`llama3.2` + `nomic-embed-text`, cosine retrieval, cited sources, NDJSON streaming) running
+entirely on-premise, and the label reader is a local vision model. Both are **advisory only
+and structurally cannot write** — a test asserts `assistant.py` contains no
 INSERT/UPDATE/DELETE and no reference to any mutating store function.
 
-**VÉRA.** A second surface (`/vera`) for raw materials: seasonal-trend forecasting
+Everything else is deterministic statistics, deliberately: the SPC drift forecast is ordinary
+least squares, the control chart is Shewhart's, and VÉRA's seasonal coefficients are written
+by hand, not learned. In a validated environment an inspector can follow a control chart and
+cannot easily validate a black box, so **no learned model sits in a release-critical path**.
+See **[docs/AI.md](docs/AI.md)** for the component-by-component breakdown.
+
+**VÉRA.** A second surface (`/vera`) for raw materials: seasonal decomposition
 (trend × weekday × month × Ramadan), FEFO with shelf-life projection, reorder point with
-safety stock (z = 1.65), expiry write-off optimisation.
+safety stock (z = 1.65), expiry write-off optimisation. The seasonal coefficients are
+configured domain knowledge, **not learned** — what makes VÉRA useful is that it corrects
+stock data with real consumption from the batch records before forecasting it, which is a
+data-integrity idea rather than a modelling one.
 
 **Batch record PDF.** Print-faithful Dossier de Lot: identification, KPI strip, line
 clearance, weighing with supplier/RM lot/expiry, change control, both packaging dossiers
@@ -412,6 +422,7 @@ python -m backend.odoo_adapter --url https://erp.example.com --db medicka \
 | Document | What it answers |
 |---|---|
 | **[WHAT_IS_BUILT.md](docs/WHAT_IS_BUILT.md)** | A factual inventory of the software, and what is a mechanism rather than a measured result |
+| **[AI.md](docs/AI.md)** | Which components are machine learning, which are statistics, and why that split is deliberate |
 | [BUSINESS_MODEL.md](docs/BUSINESS_MODEL.md) | Who buys it, pricing, licensing, KPIs and ROI |
 | [MIGRATION.md](docs/MIGRATION.md) | Leaving paper without stopping production |
 | [RESILIENCE.md](docs/RESILIENCE.md) | What happens when the hardware fails |
@@ -497,7 +508,7 @@ Stated here rather than left for someone else to find:
 - **Offline signing is not supported**, by choice — see *Offline behaviour* above.
 - **The SPC drift forecast is a linear fit** over subgroup means. Standard and defensible;
   treat it as indicative, not as a release criterion.
-- **The AI is not validated for GMP use.** That is exactly why it is advisory-only and
+- **The two models are not validated for GMP use.** That is exactly why they are advisory-only and
   structurally incapable of writing.
 - **Concurrency is tested at the scale of one line.** Forty simultaneous lots is untested.
 - **Not a validated system.** IQ/OQ/PQ, supplier qualification and periodic review are

@@ -103,9 +103,10 @@ dossier. Variance above tolerance blocks release; an untouched line reads
 true cost per unit, loss cost (money Odoo never sees), yield, gap versus
 theoretical.
 
-**Predictive SPC** — X̄/R chart with Western Electric rules and a linear drift
-forecast that warns before the specification is breached. Control limits use the
-standard ASTM STP-15D / ISO 7870-2 constants, validated against a worked example.
+**SPC with drift warning** — X̄/R chart with Western Electric rules and an
+ordinary-least-squares fit that warns before the specification is breached.
+Control limits use the standard ASTM STP-15D / ISO 7870-2 constants, validated
+against a worked example. This is statistics, not AI — see [AI.md](AI.md).
 
 **Site KPIs** — batches, right-first-time, median release cycle, deviations per
 batch, material loss, average yield, a deviation Pareto, and per-line migration
@@ -194,8 +195,11 @@ Stated here so nobody quotes it as evidence:
   falsifiable; it has not yet been falsified or confirmed against a real server.
 - **Label OCR** works end to end but the small local vision model available here
   returns nothing usable. The UI says so and points at a larger model.
-- **The AI does not learn.** It is retrieval over static SOPs plus current-batch
-  facts, and it is advisory only — a test asserts it contains no write path.
+- **The AI does not learn**, and only two components are AI at all: the LLM
+  copilot and the vision label reader. Both are advisory and structurally
+  read-only — a test asserts no write path. Everything else, including the SPC
+  forecast and VÉRA's seasonal model, is deterministic maths with visible
+  coefficients. [AI.md](AI.md) names each component.
 - **Not a validated system.** IQ/OQ/PQ, supplier qualification and periodic
   review are deployment activities, not code.
 

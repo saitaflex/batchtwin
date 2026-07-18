@@ -58,7 +58,7 @@ An **Odoo-native** digital layer: operators work *inside* the dossier; the syste
 | Unknown kWh / CO₂ | **Energy / carbon passport** per batch |
 
 **One-liner:**  
-*Pharma-grade traceability, real cost, predictive quality, and carbon — at SME price, without replacing Odoo.*
+*Pharma-grade traceability, real cost, drift warning before scrap, and carbon — at SME price, without replacing Odoo.*
 
 ---
 
@@ -213,7 +213,7 @@ who personally signs release, and why we lead with traceability, not time saved.
 - Full GMP lifecycle + e-signatures + hash audit + external anchor
 - 4 digitized Medicka dossiers (DFA / DCOI / DCOII / DCT)
 - Mass balance, SPC, equipment twin, Batch Record PDF
-- VÉRA (RM forecast) · AI copilot (read-only) · PWA EN/FR/AR
+- VÉRA (RM forecast, deterministic) · LLM copilot (read-only, local) · PWA EN/FR/AR
 - **53 tests** passed (compliance + workflow + Odoo contract)
 
 ### Traction / momentum
