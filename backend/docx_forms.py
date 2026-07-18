@@ -28,9 +28,9 @@ _TIME_PAT = re.compile(r"[…\.]{2,}\s*:\s*[…\.]{2,}|^\s*:\s*$")
 DOC_TYPES = [
     ("DFA",   "fabrication",     "Dossier de Fabrication",
      ("DOSSIER DE FABRICATION",)),
-    ("DCOI",  "conditionnement", "Dossier de Conditionnement Primaire",
+    ("DCOI",  "cond_primaire", "Dossier de Conditionnement Primaire",
      ("DOSSIER DE CONDITIONNEMENT PRIMAIRE",)),
-    ("DCOII", "conditionnement", "Dossier de Conditionnement Secondaire",
+    ("DCOII", "cond_secondaire", "Dossier de Conditionnement Secondaire",
      ("DOSSIER DE CONDITIONNEMENT SECONDAIRE",)),
     ("DCT",   "qualite",         "Dossier de Controle Qualite",
      ("DOSSIER DE CONTROLE", "DOSSIER DE CONTRÔLE")),

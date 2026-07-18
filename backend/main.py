@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from typing import Any
 
 from . import (store, analytics, report, assistant, inventory, equipment,
-               docx_parser, docx_forms)
+               docx_parser, docx_forms, auth, anchor)
 from .odoo_adapter import MockOdoo
 
 odoo = MockOdoo()
@@ -63,6 +63,25 @@ class UnitsBody(Actor):
 class SignBody(Actor):
     stage: str
     meaning: str
+    password: str          # Part 11: re-entered at every signature, never optional
+
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+
+class DeviationCloseBody(Actor):
+    password: str
+    disposition: str       # accept | rework | reject
+    root_cause: str
+    capa: str
+
+
+class PackagingBody(Actor):
+    code: str
+    field: str             # issued | used | returned | waste
+    value: float
 
 
 class EnergyBody(Actor):
@@ -70,6 +89,40 @@ class EnergyBody(Actor):
     machine: str
     kwh: float
     source: str = "iot"
+
+
+# ---- identity ---------------------------------------------------------------
+@app.post("/api/login")
+def api_login(body: LoginBody):
+    with store._write_conn() as c:
+        try:
+            return auth.login(c, body.username, body.password)
+        except auth.AuthError as e:
+            raise HTTPException(401, str(e))
+
+
+@app.post("/api/logout")
+def api_logout(token: str = ""):
+    with store._write_conn() as c:
+        auth.logout(c, token)
+    return {"ok": True}
+
+
+@app.get("/api/me")
+def api_me(token: str = ""):
+    with store._write_conn() as c:
+        try:
+            u = auth.resolve_session(c, token)
+        except auth.AuthError as e:
+            raise HTTPException(401, str(e))
+        return {"username": u["username"], "full_name": u["full_name"], "role": u["role"]}
+
+
+@app.get("/api/users")
+def api_users():
+    """Directory for the login screen. Passwords are never returned."""
+    with store._conn() as c:
+        return {"users": auth.list_users(c)}
 
 
 # ---- meta -------------------------------------------------------------------
@@ -333,7 +386,108 @@ def energy_sim(batch_id: int, body: Actor):
 @app.post("/api/batch/{batch_id}/sign")
 def sign(batch_id: int, body: SignBody):
     try:
-        return store.sign_stage(batch_id, body.stage, body.user, body.role, body.meaning)
+        return store.sign_stage(batch_id, body.stage, body.user, body.role,
+                                body.meaning, body.password)
+    except auth.AuthError as e:
+        raise HTTPException(401, str(e))
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ---- offline replay ---------------------------------------------------------
+class SyncOp(BaseModel):
+    op_id: str                  # client UUID -> idempotency key
+    kind: str                   # form | dispense | qc | checklist | packaging | units
+    batch_id: int
+    client_at: str              # when the operator actually acted, on the tablet
+    payload: dict
+
+
+class SyncBody(Actor):
+    ops: list[SyncOp]
+
+
+@app.post("/api/sync")
+def sync(body: SyncBody):
+    """Replay work captured while the tablet was offline.
+
+    Signing is deliberately absent: it needs a live password check, so it is
+    never queued. See store.OFFLINE_KINDS.
+    """
+    applied, skipped, failed = [], [], []
+    for op in body.ops:
+        if op.kind not in store.OFFLINE_KINDS:
+            failed.append({"op_id": op.op_id, "error": f"'{op.kind}' ne peut pas etre differe"})
+            continue
+        if store.already_applied(op.op_id):
+            skipped.append(op.op_id)          # duplicate replay -> no double-apply
+            continue
+        try:
+            result = _apply_op(op, body.user, body.role)
+            store.mark_applied(op.op_id, op.kind, op.batch_id, op.client_at, result)
+            applied.append(op.op_id)
+        except Exception as e:                # keep going: one bad op must not
+            failed.append({"op_id": op.op_id, "error": str(e)})   # block the rest
+    return {"applied": applied, "skipped": skipped, "failed": failed}
+
+
+def _apply_op(op: SyncOp, user: str, role: str):
+    p = op.payload
+    if op.kind == "form":
+        return store.save_form_field(op.batch_id, p["doc_key"], p["field_key"],
+                                     p.get("value", ""), user, role)
+    if op.kind == "dispense":
+        return store.record_dispense(p["line_id"], p["dispensed"], p.get("loss", 0), user)
+    if op.kind == "qc":
+        return store.add_qc_sample(op.batch_id, p["measurements"], user)
+    if op.kind == "checklist":
+        return store.update_checklist(p["item_id"], int(p["ok"]), p.get("note", ""),
+                                      user, p.get("escalate_to"))
+    if op.kind == "packaging":
+        return store.set_packaging_recon(op.batch_id, p["code"], p["field"], p["value"], user)
+    if op.kind == "units":
+        return store.set_good_units(op.batch_id, p["good_units"], user)
+    raise ValueError(f"kind inconnu: {op.kind}")
+
+
+@app.get("/api/sync/stats")
+def sync_stats(batch_id: int | None = None):
+    return store.sync_stats(batch_id)
+
+
+# ---- deviations / CAPA ------------------------------------------------------
+@app.get("/api/batch/{batch_id}/deviations")
+def deviations(batch_id: int):
+    return {"deviations": store.list_deviations(batch_id),
+            "dispositions": store.DISPOSITIONS}
+
+
+@app.post("/api/batch/{batch_id}/deviation/{deviation_id}/close")
+def deviation_close(batch_id: int, deviation_id: int, body: DeviationCloseBody):
+    try:
+        return store.close_deviation(deviation_id, body.user, body.role, body.password,
+                                     body.disposition, body.root_cause, body.capa)
+    except auth.AuthError as e:
+        raise HTTPException(401, str(e))
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ---- packaging article reconciliation (DCOI / DCOII) ------------------------
+@app.get("/api/batch/{batch_id}/packaging")
+def packaging(batch_id: int):
+    return store.packaging_balance(batch_id)
+
+
+@app.post("/api/batch/{batch_id}/packaging")
+def packaging_set(batch_id: int, body: PackagingBody):
+    try:
+        return store.set_packaging_recon(batch_id, body.code, body.field,
+                                         body.value, body.user)
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except ValueError as e:

@@ -12,8 +12,23 @@ from __future__ import annotations
 import json
 import statistics as st
 
-# d2 / D3 / D4 SPC constants for subgroup size n=10 (standard control-chart tables)
-_D2, _D3, _D4 = 3.078, 0.223, 1.777
+# Shewhart control-chart constants, subgroup size n -> (d2, D3, D4).
+# Source: ASTM STP-15D / ISO 7870-2 standard tables. d2 estimates sigma from the
+# mean range; D3/D4 bound the R chart. Keyed by n because the subgroup size is
+# whatever the operator actually measured, not always ten.
+D2 = {2: 1.128, 3: 1.693, 4: 2.059, 5: 2.326, 6: 2.534, 7: 2.704,
+      8: 2.847, 9: 2.970, 10: 3.078}
+D3_ = {2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0, 7: 0.076,
+       8: 0.136, 9: 0.184, 10: 0.223}
+D4 = {2: 3.267, 3: 2.574, 4: 2.282, 5: 2.114, 6: 2.004, 7: 1.924,
+      8: 1.864, 9: 1.816, 10: 1.777}
+SAMPLE_INTERVAL_MIN = 30      # the SOP takes one contenance sample every 30 min
+
+
+def _constants(n: int) -> tuple[float, float, float]:
+    """Clamp to the tabulated range; n<2 has no range statistic at all."""
+    n = max(2, min(10, int(n or 10)))
+    return D2[n], D3_[n], D4[n]
 
 
 def mass_balance(rows: list[dict]) -> dict:
@@ -99,12 +114,14 @@ def energy_summary(rows: list[dict], good_units: int | None,
 def spc(samples: list[dict], norm: float, tol_min: float, tol_max: float) -> dict:
     points = []
     for s in samples:
-        vals = json.loads(s["measurements"])
-        points.append({
-            "at": s["taken_at"], "mean": round(st.mean(vals), 2),
-            "range": round(max(vals) - min(vals), 2),
-            "verdict": s["verdict"], "n": len(vals),
-        })
+        vals = json.loads(s["measurements"] or "[]")
+        if vals:
+            mean, rng, n = st.mean(vals), max(vals) - min(vals), len(vals)
+        else:
+            # fall back to the stored summary if the raw readings were not kept
+            mean, rng, n = s["mean"], s["rng"], 10
+        points.append({"at": s["taken_at"], "mean": round(mean, 2),
+                       "range": round(rng, 2), "verdict": s["verdict"], "n": n})
     out = {"points": points, "norm": norm, "usl": tol_max, "lsl": tol_min,
            "control_limits": None, "signals": [], "forecast": None}
     if len(points) < 2:
@@ -112,14 +129,20 @@ def spc(samples: list[dict], norm: float, tol_min: float, tol_max: float) -> dic
 
     xbar = st.mean(p["mean"] for p in points)
     rbar = st.mean(p["range"] for p in points)
-    sigma_hat = rbar / _D2 if rbar else 0
+    n_sub = round(st.mean(p["n"] for p in points))
+    d2, d3, d4 = _constants(n_sub)
+    sigma_hat = rbar / d2 if rbar else 0.0
+    # X-bar chart limits use the standard error of a MEAN: sigma/sqrt(n).
+    # (Using 3*sigma here would be the limit for individual values and makes the
+    # chart ~sqrt(n) times too wide -- it would simply stop alarming.)
+    a2_rbar = 3 * sigma_hat / (n_sub ** 0.5)
     out["control_limits"] = {
         "x_center": round(xbar, 2),
-        "x_ucl": round(xbar + 3 * sigma_hat / (10 ** 0.5) * (10 ** 0.5), 2),  # 3-sigma on subgroup mean
-        "x_lcl": round(xbar - 3 * sigma_hat / (10 ** 0.5) * (10 ** 0.5), 2),
+        "x_ucl": round(xbar + a2_rbar, 2),
+        "x_lcl": round(xbar - a2_rbar, 2),
         "r_center": round(rbar, 2),
-        "r_ucl": round(_D4 * rbar, 2), "r_lcl": round(_D3 * rbar, 2),
-        "sigma_hat": round(sigma_hat, 3),
+        "r_ucl": round(d4 * rbar, 2), "r_lcl": round(d3 * rbar, 2),
+        "sigma_hat": round(sigma_hat, 3), "subgroup_n": n_sub,
     }
     ucl = out["control_limits"]["x_ucl"]
     lcl = out["control_limits"]["x_lcl"]
@@ -127,8 +150,11 @@ def spc(samples: list[dict], norm: float, tol_min: float, tol_max: float) -> dic
     # Western Electric rules (subset): point outside 3-sigma; 2/3 beyond 2-sigma;
     # 6-point monotonic trend (drift).
     means = [p["mean"] for p in points]
-    two_sig_hi = xbar + 2 * sigma_hat
-    two_sig_lo = xbar - 2 * sigma_hat
+    # Western Electric zones are measured in sigma of the PLOTTED statistic,
+    # which here is the subgroup mean -- so the same sqrt(n) applies.
+    sigma_xbar = sigma_hat / (n_sub ** 0.5)
+    two_sig_hi = xbar + 2 * sigma_xbar
+    two_sig_lo = xbar - 2 * sigma_xbar
     for i, m in enumerate(means):
         if m > ucl or m < lcl:
             out["signals"].append({"idx": i, "rule": "hors limite de controle (3 sigma)"})
@@ -157,7 +183,7 @@ def spc(samples: list[dict], norm: float, tol_min: float, tol_max: float) -> dic
                 out["forecast"] = {
                     "slope_g_per_sample": round(slope, 3),
                     "samples_to_spec_breach": round(steps, 1),
-                    "minutes_to_spec_breach": round(steps * 30, 0),  # 1 sample / 30 min
+                    "minutes_to_spec_breach": round(steps * SAMPLE_INTERVAL_MIN, 0),
                     "toward": "LSL (sous-remplissage)" if slope < 0 else "USL (sur-remplissage)",
                 }
     return out

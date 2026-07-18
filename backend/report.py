@@ -37,8 +37,12 @@ SOFT = colors.HexColor("#f3f3f0")
 GOODBG = colors.HexColor("#e6f4e6")
 CRITBG = colors.HexColor("#fbe6e6")
 
-STAGE_LABEL = {"fabrication": "Fabrication", "conditionnement": "Conditionnement",
-               "qualite": "Controle Qualite", "liberation": "Liberation"}
+STAGE_LABEL = {"fabrication": "Fabrication (DFA)",
+               "cond_primaire": "Conditionnement Primaire (DCOI)",
+               "cond_secondaire": "Conditionnement Secondaire (DCOII)",
+               "qualite": "Controle Qualite (DCT)", "liberation": "Liberation"}
+SEVERITY_LABEL = {"minor": "Mineure", "major": "Majeure", "critical": "Critique"}
+DISPO_LABEL = {"accept": "Accepte en l'etat", "rework": "Retraitement", "reject": "Rejet"}
 ROLE_LABEL = {"r_prod": "R. PROD - Responsable Production",
               "r_cq":   "R. CQ - Responsable Controle Qualite",
               "smq":    "SMQ - Assurance Qualite",
@@ -203,8 +207,8 @@ def build_batch_pdf(batch_id: int) -> tuple[bytes, str]:
 
     story += [_sig_block(b, "fabrication", sig_by_stage, ss)]
 
-    # ---- 2. Conditionnement -----------------------------------------------
-    story += [P("2. Conditionnement", "H")]
+    # ---- 2. Conditionnement primaire (DCOI) & secondaire (DCOII) -----------
+    story += [P("2. Conditionnement Primaire (DCOI)", "H")]
     cond = Table([[P(f'Unites bonnes produites : <b>{kpis["good_units"] if kpis["good_units"] is not None else "-"}</b> '
                      f'/ {kpis["target_units"]} cibles &nbsp;&nbsp;&bull;&nbsp;&nbsp; '
                      f'Rendement : <b>{"-" if kpis["yield_pct"] is None else f"{kpis["yield_pct"]:.1f} %"}</b>')]],
@@ -212,7 +216,13 @@ def build_batch_pdf(batch_id: int) -> tuple[bytes, str]:
     cond.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), SOFT), ("BOX", (0, 0), (-1, -1), 0.5, GRID),
                               ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                               ("LEFTPADDING", (0, 0), (-1, -1), 7)]))
-    story += [cond, Spacer(1, 4), _sig_block(b, "conditionnement", sig_by_stage, ss)]
+    story += [cond, Spacer(1, 4),
+              _packaging_table(b, "cond_primaire", ss),
+              _sig_block(b, "cond_primaire", sig_by_stage, ss)]
+
+    story += [P("2bis. Conditionnement Secondaire (DCOII)", "H"),
+              _packaging_table(b, "cond_secondaire", ss),
+              _sig_block(b, "cond_secondaire", sig_by_stage, ss)]
 
     # ---- 3. Qualite (SPC) --------------------------------------------------
     story += [P("3. Controle Qualite - Contenance (10 flacons / 30 min)", "H")]
@@ -236,6 +246,9 @@ def build_batch_pdf(batch_id: int) -> tuple[bytes, str]:
             f'({f["minutes_to_spec_breach"]:.0f} min).',
             ParagraphStyle("fc", parent=ss["Small"], textColor=colors.HexColor("#8a6d00")))]
     story += [Spacer(1, 4), _sig_block(b, "qualite", sig_by_stage, ss)]
+
+    # ---- deviations & CAPA -------------------------------------------------
+    story += _deviation_section(b, ss)
 
     # ---- 4. Liberation -----------------------------------------------------
     story += [P("4. Liberation", "H")]
@@ -295,9 +308,17 @@ def build_batch_pdf(batch_id: int) -> tuple[bytes, str]:
                                    ("BOX", (0, 0), (-1, -1), 0.5, GRID), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                                    ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                                    ("LEFTPADDING", (0, 0), (-1, -1), 7)]))
+    anc = integ.get("anchor") or {}
+    anc_txt = ("chaine confirmee par le journal d'ancrage externe "
+               f"({anc.get('anchor_lines', 0)} ancrages)" if anc.get("valid")
+               else f"ANCRAGE EXTERNE NON CONCORDANT: {anc.get('reason', '-')}")
     story += [integ_tbl, Spacer(1, 3),
               Paragraph(f"Empreinte du document (SHA-256) : {doc_hash}", ss["Mono"]),
               Paragraph(f"Tete de chaine d'audit : {integ.get('head','-')}", ss["Mono"]),
+              Paragraph(f"Temoin externe : {anc_txt}", ss["Mono"]),
+              Paragraph("Ce document imprime la tete de chaine : archive separement, il constitue "
+                        "un troisieme temoin independant de la base et du journal d'ancrage.",
+                        ss["Small"]),
               Paragraph(f"Genere le {gen_at} - toute modification ulterieure invalide l'empreinte.", ss["Mono"])]
 
     buf = io.BytesIO()
@@ -325,8 +346,66 @@ def _tbl_style(total_row: bool = False):
     return TableStyle(cmds)
 
 
+def _packaging_table(b, stage, ss):
+    """Bilan des articles de conditionnement: issued must equal used + returned
+    + waste. An unexplained variance is exactly what an inspector looks for."""
+    P = lambda t, s="Cell": Paragraph(t, ss[s])
+    lines = [x for x in (b.get("packaging") or {}).get("lines", []) if x["stage"] == stage]
+    if not lines:
+        return Spacer(1, 2)
+    rows = [[P("<b>Code</b>", "Small"), P("<b>Article</b>", "Small"),
+             P("<b>Fourni</b>", "Small"), P("<b>Utilise</b>", "Small"),
+             P("<b>Retourne</b>", "Small"), P("<b>Dechet</b>", "Small"),
+             P("<b>Ecart</b>", "Small")]]
+    for x in lines:
+        if x["variance"] is None:
+            var, col = "non solde", MUTED
+        else:
+            var = f'{x["variance"]:+,.0f} ({x["variance_pct"]:.2f}%)'.replace(",", " ")
+            col = GOOD if x["ok"] else CRIT
+        rows.append([P(x["code"]), P(x["label"]),
+                     P(_fmt(x["issued"], 0), "CellR"), P(_fmt(x["used"], 0), "CellR"),
+                     P(_fmt(x["returned"], 0), "CellR"), P(_fmt(x["waste"], 0), "CellR"),
+                     Paragraph(var, ParagraphStyle("v", parent=ss["CellR"], textColor=col))])
+    t = Table(rows, colWidths=[20 * mm, 54 * mm, 20 * mm, 20 * mm, 20 * mm, 18 * mm, 28 * mm])
+    t.setStyle(_tbl_style())
+    caption = Paragraph(
+        "Bilan des articles de conditionnement : fourni = utilise + retourne + dechet.",
+        ss["Small"])
+    return KeepTogether([caption, Spacer(1, 2), t, Spacer(1, 4)])
+
+
+def _deviation_section(b, ss):
+    """Every deviation, its disposition, root cause and CAPA. Release is blocked
+    while any of these is open."""
+    P = lambda t, s="Cell": Paragraph(t, ss[s])
+    devs = b.get("deviations") or []
+    if not devs:
+        return []
+    out = [P("Deviations &amp; CAPA", "H")]
+    rows = [[P("<b>Ref</b>", "Small"), P("<b>Constat</b>", "Small"),
+             P("<b>Gravite</b>", "Small"), P("<b>Cause racine / CAPA</b>", "Small"),
+             P("<b>Decision</b>", "Small"), P("<b>Statut</b>", "Small")]]
+    for d in devs:
+        closed = d["status"] == "closed"
+        col = GOOD if closed else CRIT
+        cause = (f'{d["root_cause"] or "-"}<br/><font size=6 color="#898781">'
+                 f'CAPA: {d["capa"] or "-"}</font>') if closed else "en investigation"
+        who = (f'{DISPO_LABEL.get(d["disposition"], d["disposition"] or "-")}'
+               f'<br/><font size=6 color="#898781">{d["closed_by"] or ""} '
+               f'{(d["closed_at"] or "")[:10]}</font>') if closed else "-"
+        rows.append([P(d["ref"]),
+                     P(f'{d["title"]}<br/><font size=6 color="#898781">{d["detail"] or ""}</font>'),
+                     P(SEVERITY_LABEL.get(d["severity"], d["severity"])),
+                     P(cause), P(who),
+                     Paragraph("CLOTUREE" if closed else "OUVERTE",
+                               ParagraphStyle("s", parent=ss["Cell"], textColor=col))])
+    t = Table(rows, colWidths=[24 * mm, 50 * mm, 18 * mm, 40 * mm, 24 * mm, 24 * mm])
+    t.setStyle(_tbl_style())
+    return out + [t, Spacer(1, 6)]
+
+
 def _sig_block(b, stage, sig_by_stage, ss):
-    from reportlab.lib.styles import ParagraphStyle as PS
     sig = sig_by_stage.get(stage)
     label = STAGE_LABEL[stage]
     if sig:

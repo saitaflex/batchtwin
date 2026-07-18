@@ -416,6 +416,90 @@
     background:rgba(234,179,8,.1);border:1px solid var(--warning);color:var(--warning)}
   .frm-meta{font-size:11px;color:var(--muted);margin-bottom:10px}
 
+  /* =============== login gate + re-auth modal =============== */
+  .gate,.modal{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:20px;
+    background:radial-gradient(900px 520px at 70% -10%,var(--glowA),transparent 60%),var(--plane)}
+  .modal{background:rgba(3,5,10,.72);backdrop-filter:blur(8px)}
+  :root[data-theme="light"] .modal{background:rgba(15,23,42,.4)}
+  .gate[hidden],.modal[hidden]{display:none}
+  .gate-card,.modal-card{width:min(100%,400px);display:flex;flex-direction:column;gap:12px;
+    padding:28px;border-radius:20px;background:var(--cardbg);border:1px solid var(--border);
+    box-shadow:var(--menushadow);backdrop-filter:blur(18px)}
+  .gate-card .gl{width:72px;height:72px;object-fit:contain;align-self:center;
+    filter:drop-shadow(0 8px 24px rgba(108,99,255,.5))}
+  .gate-card h1{font-size:22px;text-align:center}
+  .gate-card .sub{margin:0;text-align:center;color:var(--muted);font-size:12.5px}
+  .gate-card label,.modal-card label{display:flex;flex-direction:column;gap:5px;
+    font-size:11.5px;color:var(--muted);font-weight:600}
+  .gate-card input,.modal-card input{min-height:46px;padding:0 13px;border-radius:12px;font:inherit;font-size:14px;
+    background:var(--fill);border:1px solid var(--border);color:var(--ink)}
+  .gate-card input:focus,.modal-card input:focus{outline:none;border-color:var(--series);background:var(--fill-2)}
+  .gate-card .btn,.modal-card .btn{min-height:46px;font-size:14px}
+  .gate-err{font-size:12.5px;font-weight:600;color:var(--critical);padding:9px 11px;border-radius:10px;
+    background:color-mix(in srgb,var(--critical) 12%,transparent);border:1px solid var(--critical)}
+  .gate-hint{font-size:11px;color:var(--muted);line-height:1.6;padding:10px;border-radius:10px;
+    background:var(--fill-3);border:1px solid var(--border)}
+  .gate-note{font-size:10.5px;color:var(--muted);text-align:center;line-height:1.5}
+  .modal-card h3{font-size:16px}
+  .modal-sub{margin:0;font-size:13px;color:var(--ink-2)}
+  .modal-who{font-size:12px;color:var(--muted);padding:9px 11px;border-radius:10px;
+    background:var(--fill);border:1px solid var(--border)}
+  .modal-acts{display:flex;gap:8px}
+  .modal-acts .btn{flex:1}
+  .whoami{display:flex;align-items:center;gap:9px;min-height:46px;padding:5px 8px 5px 6px;
+    border-radius:14px;background:var(--fill);border:1px solid var(--border)}
+  .whoami[hidden]{display:none}
+  .whoami .av{width:30px;height:30px;flex:none;border-radius:50%;display:grid;place-items:center;
+    font-size:12px;font-weight:800;color:#fff;background:linear-gradient(135deg,#6C63FF,#38BDF8)}
+  .whoami .tx{display:flex;flex-direction:column;line-height:1.2}
+  .whoami .tx b{font-size:13px;font-weight:650}
+  .whoami .tx small{font-size:10.5px;color:var(--muted)}
+  .whoami .lo{min-height:32px;min-width:32px;border-radius:9px;cursor:pointer;font-size:14px;
+    background:none;border:1px solid var(--border);color:var(--ink-2)}
+  .whoami .lo:hover{border-color:var(--critical);color:var(--critical)}
+
+  /* =============== deviations / CAPA =============== */
+  .dev{display:flex;gap:11px;align-items:flex-start;padding:12px;border-radius:13px;margin-top:9px;
+    background:var(--fill);border:1px solid var(--border);border-inline-start:3px solid var(--critical)}
+  .dev.closed{border-inline-start-color:var(--good);opacity:.86}
+  .dev .body{flex:1;min-width:0}
+  .dev .ref{font-family:ui-monospace,monospace;font-size:11px;color:var(--muted)}
+  .dev .body b{display:block;font-size:13px;margin:2px 0 4px}
+  .dev .body .meta{font-size:11.5px;color:var(--muted);line-height:1.5}
+  .dev .sev{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    padding:3px 8px;border-radius:999px;flex:none}
+  .dev .sev.critical{background:color-mix(in srgb,var(--critical) 18%,transparent);color:var(--critical)}
+  .dev .sev.major{background:color-mix(in srgb,var(--warning) 20%,transparent);color:var(--warning)}
+  .dev .sev.minor{background:var(--fill-2);color:var(--ink-2)}
+  .devform{display:none;flex-direction:column;gap:9px;margin-top:10px;padding:12px;
+    background:var(--fill-3);border:1px solid var(--border);border-radius:12px}
+  .devform.open{display:flex}
+  .devform label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted)}
+  .devform input,.devform select,.devform textarea{min-height:42px;padding:9px 11px;border-radius:11px;
+    background:var(--fill);border:1px solid var(--border);color:var(--ink);font:inherit;font-size:13px}
+  .devform textarea{min-height:62px;resize:vertical}
+
+  /* =============== packaging reconciliation =============== */
+  .pkg{margin-top:10px}
+  .pkg h4{margin:14px 0 6px;font-size:12px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--series)}
+  table.pkg-t{width:100%;border-collapse:collapse;font-size:12.5px}
+  table.pkg-t th{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;
+    text-align:start;padding:7px 6px;border-bottom:1px solid var(--border);white-space:nowrap}
+  table.pkg-t td{padding:5px 6px;border-bottom:1px solid var(--grid)}
+  table.pkg-t input{width:82px;min-height:38px;padding:0 8px;border-radius:9px;text-align:right;
+    background:var(--fill);border:1px solid var(--border);color:var(--ink);font:inherit;
+    font-variant-numeric:tabular-nums}
+  .pkg-var{font-weight:700;font-variant-numeric:tabular-nums}
+  .pkg-var.ok{color:var(--good)} .pkg-var.bad{color:var(--critical)}
+
+  /* =============== offline banner =============== */
+  .offline{position:fixed;inset-inline:0;bottom:0;z-index:150;display:none;gap:10px;
+    align-items:center;justify-content:center;padding:11px 16px;font-size:13px;font-weight:600;
+    background:var(--warning);color:#1a1200}
+  .offline.on{display:flex}
+  .offline .n{background:rgba(0,0,0,.18);padding:2px 9px;border-radius:999px;font-variant-numeric:tabular-nums}
+
   /* ---------------- primary nav: no hidden ⋯ menu ---------------- */
   .navbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 16px}
   .navbar a,.navbar button{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 15px;
@@ -427,7 +511,49 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+
+<!-- ===== login gate: nothing renders until identity is established ===== -->
+<div class="gate" id="gate">
+  <form class="gate-card" id="login-form" autocomplete="on">
+    <img src="/icons/batchtwin-icon.png" alt="" width="512" height="512" class="gl" />
+    <h1>BatchTwin</h1>
+    <p class="sub" data-i18n="auth_sub">Dossier de lot électronique · Laboratoires Medicka</p>
+    <label><span data-i18n="auth_user">Identifiant</span>
+      <input id="lg-user" name="username" autocomplete="username" required /></label>
+    <label><span data-i18n="auth_pass">Mot de passe</span>
+      <input id="lg-pass" name="password" type="password" autocomplete="current-password" required /></label>
+    <div class="gate-err" id="lg-err" hidden></div>
+    <button class="btn" type="submit" id="lg-go" data-i18n="auth_login">Se connecter</button>
+    <div class="gate-hint" data-i18n="auth_hint">
+      Comptes de démonstration — prod.karim / Fabrication#26 · cq.sana / Controle#26 ·
+      smq.leila / Qualite#26 · prt.mona / Pharma#26
+    </div>
+    <div class="gate-note" data-i18n="auth_note">
+      21 CFR Part 11 : le mot de passe est redemandé à chaque signature.
+    </div>
+  </form>
+</div>
+
+<!-- ===== re-authentication challenge, shown before every signature ===== -->
+<div class="modal" id="pwmodal" hidden>
+  <form class="modal-card" id="pw-form">
+    <h3 data-i18n="auth_sign_title">Signature électronique</h3>
+    <p class="modal-sub" id="pw-what">—</p>
+    <div class="modal-who" id="pw-who">—</div>
+    <label><span data-i18n="auth_pass">Mot de passe</span>
+      <input id="pw-pass" type="password" autocomplete="current-password" required /></label>
+    <div class="gate-err" id="pw-err" hidden></div>
+    <div class="modal-acts">
+      <button class="btn ghost" type="button" id="pw-cancel" data-i18n="chg_cancel">Annuler</button>
+      <button class="btn" type="submit" id="pw-go" data-i18n="auth_confirm">Signer</button>
+    </div>
+    <div class="gate-note" data-i18n="auth_meaning">
+      En signant, vous attestez de l'exactitude et de la conformité de cette section.
+    </div>
+  </form>
+</div>
+
+<div class="wrap" id="app-wrap" hidden>
   <header class="top">
     <div class="brand">
       <img class="logo" src="/icons/batchtwin-icon.png" alt="BatchTwin" width="512" height="512" />
@@ -453,22 +579,10 @@
         </div>
         <select id="lotpick" class="dd-native" tabindex="-1" aria-hidden="true"></select>
       </div>
-      <div class="dd" id="dd-user">
-        <button class="dd-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
-          <span class="av" data-dd-av>K</span>
-          <span class="tx"><b data-dd-main>—</b><small data-dd-sub></small></span>
-          <span class="caret"></span>
-        </button>
-        <div class="dd-menu" role="listbox">
-          <div class="hd" data-i18n="dd_signin">Signer en tant que</div>
-          <div data-dd-opts></div>
-        </div>
-        <select id="user" class="dd-native" tabindex="-1" aria-hidden="true">
-          <option value="prod.karim|r_prod" data-sub="R. PROD · Responsable Production">Karim</option>
-          <option value="cq.sana|r_cq" data-sub="R. CQ · Responsable Contrôle Qualité">Sana</option>
-          <option value="smq.leila|smq" data-sub="SMQ · Assurance Qualité">Leïla</option>
-          <option value="prt.mona|prt" data-sub="PRT · Pharmacien Responsable Technique">Mona</option>
-        </select>
+      <div class="whoami" id="whoami" hidden>
+        <span class="av" id="me-av">—</span>
+        <span class="tx"><b id="me-name">—</b><small id="me-role">—</small></span>
+        <button class="lo" id="logout" title="Se déconnecter" data-i18n-title="auth_logout">⏻</button>
       </div>
       <button class="btn" id="pdf" data-i18n="nav_pdf">⬇ Dossier de Lot (PDF)</button>
     </div>
@@ -595,9 +709,21 @@
         <div class="note" id="mb-note"></div>
       </div>
     </div>
+    <div class="card">
+      <h2><span data-i18n="pkg_title">Bilan des articles de conditionnement</span>
+        <span class="badge neutral" id="pkg-badge">—</span></h2>
+      <div class="cap" data-i18n="pkg_cap">DCOI &amp; DCOII · fourni = utilisé + retourné + déchet. Tout écart supérieur à 1 % bloque la libération.</div>
+      <div class="pkg" id="packaging"></div>
+    </div>
   </div>
 
   <div class="tab-panel" data-panel="quality">
+    <div class="card">
+      <h2><span data-i18n="dev_title">Déviations &amp; CAPA</span>
+        <span class="badge neutral" id="dev-badge">—</span></h2>
+      <div class="cap" data-i18n="dev_cap">Ouvertes automatiquement sur échec contrôle ou vide de ligne non conforme. La libération est bloquée tant qu'une déviation reste ouverte.</div>
+      <div id="deviations"></div>
+    </div>
     <div class="grid2">
       <div class="card">
         <h2><span data-i18n="spc_title">Contrôle contenance — SPC</span>
@@ -653,6 +779,10 @@
       <div class="workflow-list" id="workflow-notes-panel"></div>
     </div>
   </div>
+</div>
+<div class="offline" id="offline-bar">
+  <span data-i18n="off_banner">⚠ Hors ligne — la saisie est mise en file d'attente, la signature nécessite le réseau.</span>
+  <span class="n" id="off-count">0</span>
 </div>
 <script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>{}))}</script>
 <script src="/i18n.js"></script>

@@ -7,7 +7,12 @@ const TF = (k, v) => window.tf ? window.tf(k, v) : k;
 
 let BID = null;
 let FILL_UNIT = "mL";
-const actor = () => { const [user, role] = $("#user").value.split("|"); return {user, role}; };
+
+/* ---------------- identity ----------------
+   ME is established by a real login and is the ONLY source of who is acting.
+   There is no role dropdown any more: you cannot act as someone you are not. */
+let ME = null;
+const actor = () => ({user: ME.username, role: ME.role});
 const api = async (url, body) => {
   const r = await fetch(url, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
   if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.status); }
@@ -19,7 +24,88 @@ const SIGN_MEANING = (stage) => T("sign_" + stage);
 /* short signatory labels — the real Medicka roles, never the raw key */
 const ROLE_SHORT = {r_prod: "R. PROD", r_cq: "R. CQ", smq: "SMQ", prt: "PRT"};
 const roleShort = (r) => ROLE_SHORT[r] || r;
+/* The lifecycle, in order. Packaging is two dossiers (DCOI, DCOII) signed separately. */
+const STAGE_ORDER = ["fabrication", "cond_primaire", "cond_secondaire", "qualite", "liberation"];
 const CHIP_KEYS = ["chip_next", "chip_blocked", "chip_summary", "chip_quality", "chip_loss", "chip_carbon"];
+
+/* ---------------- login gate ---------------- */
+const TOKEN_KEY = "bt_token";
+
+async function startSession() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    try {
+      ME = await api(`/api/me?token=${encodeURIComponent(token)}`);
+      return true;
+    } catch (e) { localStorage.removeItem(TOKEN_KEY); }
+  }
+  return false;
+}
+
+function showGate(msg) {
+  $("#gate").hidden = false;
+  $("#app-wrap").hidden = true;
+  const err = $("#lg-err");
+  if (msg) { err.textContent = msg; err.hidden = false; } else { err.hidden = true; }
+  $("#lg-pass").value = "";
+}
+
+function showApp() {
+  $("#gate").hidden = true;
+  $("#app-wrap").hidden = false;
+  $("#whoami").hidden = false;
+  $("#me-av").textContent = (ME.full_name || ME.username).trim().charAt(0).toUpperCase();
+  $("#me-name").textContent = ME.full_name;
+  $("#me-role").textContent = ROLE_LONG[ME.role] || ME.role;
+}
+
+const ROLE_LONG = {
+  r_prod: "R. PROD · Responsable Production",
+  r_cq: "R. CQ · Responsable Contrôle Qualité",
+  smq: "SMQ · Assurance Qualité",
+  prt: "PRT · Pharmacien Responsable Technique",
+};
+
+function initLogin() {
+  $("#login-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $("#lg-go");
+    btn.disabled = true;
+    try {
+      const r = await api("/api/login", {
+        username: $("#lg-user").value.trim(), password: $("#lg-pass").value});
+      localStorage.setItem(TOKEN_KEY, r.token);
+      ME = {username: r.username, full_name: r.full_name, role: r.role};
+      showApp();
+      await boot();
+    } catch (err) {
+      showGate(err.message);
+    } finally { btn.disabled = false; }
+  };
+  $("#logout").onclick = async () => {
+    const t = localStorage.getItem(TOKEN_KEY);
+    try { await api(`/api/logout?token=${encodeURIComponent(t)}`, {}); } catch (e) {}
+    localStorage.removeItem(TOKEN_KEY);
+    ME = null;
+    $("#whoami").hidden = true;
+    showGate();
+  };
+}
+
+/* --- re-authentication before every signature (21 CFR Part 11.200) --- */
+function askPassword(what, whoLine) {
+  return new Promise((resolve) => {
+    const m = $("#pwmodal"), form = $("#pw-form"), err = $("#pw-err");
+    $("#pw-what").textContent = what;
+    $("#pw-who").textContent = whoLine;
+    $("#pw-pass").value = ""; err.hidden = true;
+    m.hidden = false;
+    setTimeout(() => $("#pw-pass").focus(), 50);
+    const close = (value) => { m.hidden = true; form.onsubmit = null; resolve(value); };
+    form.onsubmit = (e) => { e.preventDefault(); close($("#pw-pass").value); };
+    $("#pw-cancel").onclick = () => close(null);
+  });
+}
 
 async function boot() {
   const list = await api("/api/batches");
@@ -32,8 +118,8 @@ async function boot() {
   initAI();
   initTabs();
   initDropdowns();
-  syncDropdown("#dd-user");
   initChangeForm();
+  initOffline();
   window.onLangChange = () => { renderChips(); refresh(); };
 }
 
@@ -53,7 +139,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<"
 
 /* ---- rich dropdown driven by a hidden native <select> (tablet friendly) ----
    The <select> stays the single source of truth, so every existing read of
-   #user.value / #lotpick.value keeps working untouched. */
+   #lotpick.value keeps working untouched. */
 function syncDropdown(sel) {
   const dd = $(sel);
   if (!dd) return;
@@ -481,6 +567,8 @@ function render(d, a, docs, tasks) {
   renderChecklist(b);
   renderDispense(d);
   renderChanges(d);
+  renderDeviations(d);
+  renderPackaging(d);
   renderSPC(d.spc);
   renderEnergy(d.energy);
   renderAudit(a);
@@ -493,7 +581,7 @@ function renderEnergy(e) {
   }
   const byStage = {};
   e.per_stage.forEach(s => byStage[s.stage] = s);
-  const order = ["fabrication", "conditionnement", "qualite", "liberation"];
+  const order = STAGE_ORDER;
   const rows = order.map(st => {
     const s = byStage[st] || {kwh: 0, co2_kg: 0};
     return `<tr><td>${STAGE_LABEL(st)}</td><td>${num(s.kwh, 2)}</td><td>${num(s.co2_kg, 2)}</td></tr>`;
@@ -529,7 +617,7 @@ function renderStepper(b, energy) {
   const kwhByStage = {};
   (energy && energy.per_stage || []).forEach(s => kwhByStage[s.stage] = s.kwh);
   const me = actor();
-  const order = ["fabrication", "conditionnement", "qualite", "liberation"];
+  const order = STAGE_ORDER;
   $("#stepper").innerHTML = order.map((name, i) => {
     const stage = b.stages.find(s => s.name === name);
     const signed = stage.status === "signed";
@@ -686,9 +774,190 @@ function fmtDetail(d) { try { const o = JSON.parse(d); return Object.entries(o).
 /* ---------------- actions ---------------- */
 async function signStage(stage) {
   const me = actor();
-  try { await api(`/api/batch/${BID}/sign`, {...me, stage, meaning: SIGN_MEANING(stage)}); }
-  catch (e) { alert(T("sign_refused") + e.message); }
+  // A signature is never one click: the password is re-entered every time.
+  const password = await askPassword(
+    TF("auth_sign_what", {stage: STAGE_LABEL(stage)}),
+    `${ME.full_name} · ${ROLE_LONG[ME.role] || ME.role}`);
+  if (password === null) return;
+  try {
+    const r = await api(`/api/batch/${BID}/sign`,
+                        {...me, stage, meaning: SIGN_MEANING(stage), password});
+    toast(TF("auth_signed", {who: r.signed_by, stage: STAGE_LABEL(stage)}));
+  } catch (e) { alert(T("sign_refused") + e.message); }
   refresh();
+}
+
+function toast(msg) {
+  const d = document.createElement("div");
+  d.textContent = msg;
+  d.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:300;" +
+    "padding:12px 18px;border-radius:12px;font-weight:600;font-size:13px;color:#fff;" +
+    "background:linear-gradient(100deg,#6C63FF,#38BDF8);box-shadow:0 12px 32px rgba(0,0,0,.35)";
+  document.body.appendChild(d);
+  setTimeout(() => d.remove(), 3200);
+}
+
+/* ---------------- deviations / CAPA ---------------- */
+const SEV_ORDER = {critical: 0, major: 1, minor: 2};
+
+function renderDeviations(d) {
+  const list = (d.batch.deviations || []).slice()
+    .sort((a, b) => (a.status === b.status ? SEV_ORDER[a.severity] - SEV_ORDER[b.severity]
+                                          : a.status === "open" ? -1 : 1));
+  const open = list.filter(x => x.status === "open").length;
+  const badge = $("#dev-badge");
+  badge.className = "badge " + (open ? "crit" : list.length ? "good" : "neutral");
+  badge.textContent = open ? TF("dev_open_n", {n: open})
+                           : list.length ? T("dev_all_closed") : T("dev_none");
+
+  const canClose = CHG_QA.includes(ME.role);
+  $("#deviations").innerHTML = list.length ? list.map(x => {
+    const closed = x.status === "closed";
+    const closure = closed
+      ? `<div class="meta"><b style="display:inline">${T("dev_cause")}</b> ${esc(x.root_cause)}<br>
+           <b style="display:inline">CAPA</b> ${esc(x.capa)}<br>
+           ${TF("dev_closed_by", {who: esc(x.closed_by), when: new Date(x.closed_at).toLocaleString(loc())})}
+           — <b style="display:inline">${T("dispo_" + x.disposition)}</b></div>`
+      : (canClose
+          ? `<button class="btn" style="margin-top:8px;font-size:12px;padding:7px 12px"
+               onclick="openDevForm(${x.id})">${T("dev_close")}</button>
+             <form class="devform" id="devf-${x.id}" onsubmit="return closeDev(event,${x.id})">
+               <label><span>${T("dev_disposition")}</span>
+                 <select id="devd-${x.id}">
+                   <option value="accept">${T("dispo_accept")}</option>
+                   <option value="rework">${T("dispo_rework")}</option>
+                   <option value="reject">${T("dispo_reject")}</option>
+                 </select></label>
+               <label><span>${T("dev_cause")}</span><textarea id="devc-${x.id}" required></textarea></label>
+               <label><span>${T("dev_capa")}</span><textarea id="deva-${x.id}" required></textarea></label>
+               <div class="row">
+                 <button class="btn" type="submit">${T("dev_confirm")}</button>
+                 <button class="btn ghost" type="button" onclick="openDevForm(${x.id})">${T("chg_cancel")}</button>
+               </div>
+             </form>`
+          : `<div class="meta">${T("dev_await_qa")}</div>`);
+    return `<div class="dev ${closed ? "closed" : ""}">
+      <span class="sev ${x.severity}">${T("sev_" + x.severity)}</span>
+      <div class="body">
+        <span class="ref">${x.ref}</span>
+        <b>${esc(x.title)}</b>
+        <div class="meta">${esc(x.detail || "")}<br>
+          ${TF("dev_opened", {who: esc(x.opened_by), when: new Date(x.opened_at).toLocaleString(loc())})}</div>
+        ${closure}
+      </div></div>`;
+  }).join("") : `<div class="note">${T("dev_none_note")}</div>`;
+}
+
+function openDevForm(id) { $(`#devf-${id}`).classList.toggle("open"); }
+
+async function closeDev(ev, id) {
+  ev.preventDefault();
+  const disposition = $(`#devd-${id}`).value;
+  const root_cause = $(`#devc-${id}`).value.trim();
+  const capa = $(`#deva-${id}`).value.trim();
+  if (!root_cause || !capa) { alert(T("dev_need_all")); return false; }
+  // Closing a deviation is a signed act too.
+  const password = await askPassword(T("dev_close_what"),
+                                     `${ME.full_name} · ${ROLE_LONG[ME.role]}`);
+  if (password === null) return false;
+  try {
+    await api(`/api/batch/${BID}/deviation/${id}/close`,
+              {...actor(), password, disposition, root_cause, capa});
+    toast(T("dev_closed_ok"));
+  } catch (e) { alert("⚠ " + e.message); }
+  refresh();
+  return false;
+}
+
+/* ---------------- packaging article reconciliation ---------------- */
+const PKG_FIELDS = ["issued", "used", "returned", "waste"];
+
+function renderPackaging(d) {
+  const pk = d.batch.packaging || {lines: []};
+  const badge = $("#pkg-badge");
+  if (!pk.lines.length) { badge.textContent = "—"; badge.className = "badge neutral"; }
+  else if (pk.balanced) { badge.textContent = T("pkg_balanced"); badge.className = "badge good"; }
+  else if (pk.complete) { badge.textContent = TF("pkg_variance", {p: pk.worst_variance_pct}); badge.className = "badge crit"; }
+  else { badge.textContent = T("pkg_incomplete"); badge.className = "badge neutral"; }
+
+  const stages = ["cond_primaire", "cond_secondaire"];
+  const signed = Object.fromEntries(d.batch.stages.map(s => [s.name, s.status === "signed"]));
+  $("#packaging").innerHTML = stages.map(st => {
+    const rows = pk.lines.filter(l => l.stage === st);
+    if (!rows.length) return "";
+    const lock = signed[st];
+    return `<h4>${STAGE_LABEL(st)}${lock ? " 🔒" : ""}</h4>
+      <div style="overflow-x:auto"><table class="pkg-t">
+        <tr><th>${T("pkg_code")}</th><th>${T("pkg_article")}</th>
+          ${PKG_FIELDS.map(f => `<th>${T("pkg_" + f)}</th>`).join("")}
+          <th>${T("pkg_var")}</th></tr>
+        ${rows.map(r => `<tr>
+          <td style="font-family:ui-monospace,monospace;font-size:11px">${esc(r.code)}</td>
+          <td>${esc(r.label)}</td>
+          ${PKG_FIELDS.map(f => `<td><input type="number" step="1" min="0" inputmode="numeric"
+             value="${r[f] ?? ""}" data-code="${esc(r.code)}" data-field="${f}"
+             ${lock ? "disabled" : ""}></td>`).join("")}
+          <td class="pkg-var ${r.ok === null ? "" : r.ok ? "ok" : "bad"}">
+            ${r.variance === null ? "—" : (r.variance > 0 ? "+" : "") + num(r.variance, 0)}
+            ${r.variance === null ? "" : `<div style="font-size:10px;font-weight:400;color:var(--muted)">${num(r.variance_pct, 2)}%</div>`}
+          </td></tr>`).join("")}
+      </table></div>`;
+  }).join("");
+
+  $("#packaging").querySelectorAll("input:not([disabled])").forEach(i =>
+    i.addEventListener("change", async () => {
+      const v = parseFloat(i.value);
+      if (isNaN(v) || v < 0) { alert(T("chg_bad_qty")); return; }
+      try {
+        await api(`/api/batch/${BID}/packaging`,
+                  {...actor(), code: i.dataset.code, field: i.dataset.field, value: v});
+      } catch (e) { alert("⚠ " + e.message); }
+      refresh();
+    }));
+}
+
+/* ---------------- offline capture queue ----------------
+   Signing is intentionally absent: verifying a password offline would mean
+   caching credentials on a shared tablet. Capture queues; signature waits. */
+const OUTBOX_KEY = "bt_outbox";
+const outbox = {
+  all: () => { try { return JSON.parse(localStorage.getItem(OUTBOX_KEY) || "[]"); } catch { return []; } },
+  save: (q) => localStorage.setItem(OUTBOX_KEY, JSON.stringify(q)),
+  add(kind, batch_id, payload) {
+    const q = this.all();
+    q.push({op_id: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random())),
+            kind, batch_id, client_at: new Date().toISOString(), payload});
+    this.save(q);
+    paintOffline();
+  },
+};
+
+function paintOffline() {
+  const n = outbox.all().length;
+  const bar = $("#offline-bar");
+  bar.classList.toggle("on", !navigator.onLine || n > 0);
+  $("#off-count").textContent = n;
+}
+
+async function flushOutbox() {
+  const q = outbox.all();
+  if (!q.length || !navigator.onLine || !ME) return;
+  try {
+    const r = await api("/api/sync", {...actor(), ops: q});
+    const done = new Set([...r.applied, ...r.skipped]);
+    outbox.save(q.filter(op => !done.has(op.op_id)));
+    if (r.applied.length) toast(TF("off_synced", {n: r.applied.length}));
+    if (r.failed.length) console.warn("sync failures", r.failed);
+    paintOffline();
+    refresh();
+  } catch (e) { /* still offline; keep the queue */ }
+}
+
+function initOffline() {
+  addEventListener("online", () => { paintOffline(); flushOutbox(); });
+  addEventListener("offline", paintOffline);
+  paintOffline();
+  flushOutbox();
 }
 async function toggleChk(id, checked) {
   const me = actor();
@@ -729,7 +998,6 @@ $("#pdf").onclick = () => { window.open(`/api/batch/${BID}/report.pdf`, "_blank"
 $("#reset").onclick = async () => { await api("/api/seed?reset=true", {}); boot(); };
 document.addEventListener("click", closeMenus);
 document.querySelectorAll(".dd-menu").forEach(m => m.addEventListener("click", e => e.stopPropagation()));
-$("#user").onchange = () => { syncDropdown("#dd-user"); refresh(); };
 
 function initChangeForm() {
   const form = $("#chgform");
@@ -768,4 +1036,10 @@ function setTheme(mode) {
 setTheme(localStorage.getItem("bt_theme") || "dark");
 $("#theme").onclick = () =>
   setTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
-boot();
+
+/* ---------------- entry point ----------------
+   No identity, no application: the gate resolves first. */
+initLogin();
+startSession().then(ok => {
+  if (ok) { showApp(); boot(); } else { showGate(); }
+});

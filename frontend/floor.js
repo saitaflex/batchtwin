@@ -1,3 +1,4 @@
+const STAGE_ORDER = ["fabrication", "cond_primaire", "cond_secondaire", "qualite", "liberation"];
 /* BatchTwin — Mode poste (atelier). Mobile-first, scan-to-act. */
 const $ = (s) => document.querySelector(s);
 const M = $("#main");
@@ -22,7 +23,8 @@ const USERS = [
   {id: "poly.yassine", nameKey: "floor_user_poly", roles: ["r_prod", "r_cq"]},
 ];
 const STAGE_LABEL = (name) => T(`stage_${name}`);
-const STAGE_ROLE = {fabrication: "r_prod", conditionnement: "r_prod", qualite: "r_cq", liberation: "prt"};
+const STAGE_ROLE = {fabrication: "r_prod", cond_primaire: "r_prod",
+                    cond_secondaire: "r_prod", qualite: "r_cq", liberation: "prt"};
 const SIGN_MEANING = (stage) => T(`sign_${stage}`);
 
 const S = {user: null, bid: null, data: null, codes: null, screen: "home", matId: null};
@@ -224,7 +226,7 @@ function sign() {
   header("✍️ " + T("floor_sign_title"), `${T("floor_sign_connected")} ${S.user.name}`);
   const b = S.data.batch;
   const signed = {}; b.signatures.forEach(s => signed[s.stage] = s);
-  const order = ["fabrication", "conditionnement", "qualite", "liberation"];
+  const order = STAGE_ORDER;
   const card = el(`<div class="card"></div>`);
   order.forEach((st, i) => {
     const isSigned = b.stages.find(x => x.name === st).status === "signed";

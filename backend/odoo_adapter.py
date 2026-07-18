@@ -229,3 +229,56 @@ def _project(row: dict, fields: list[str] | None) -> dict:
     out = {"id": row["id"]}
     out.update({f: row.get(f) for f in fields})
     return out
+
+
+def _main() -> int:
+    """Point BatchTwin at a real Odoo and prove the adapter works:
+
+        python -m backend.odoo_adapter --url https://erp.example.com \\
+            --db medicka --user admin --password ***
+
+    Prints what it found, so "the mock is a drop-in" can be demonstrated rather
+    than asserted. Read-only: it never creates or modifies anything.
+    """
+    import argparse
+    ap = argparse.ArgumentParser(description="Check a live Odoo against the BatchTwin contract")
+    for opt in ("url", "db", "user", "password"):
+        ap.add_argument(f"--{opt}", required=True)
+    a = ap.parse_args()
+
+    print(f"connecting to {a.url} (db={a.db}) ...")
+    try:
+        odoo = LiveOdoo(a.url, a.db, a.user, a.password)
+    except Exception as e:                                  # noqa: BLE001
+        print(f"  FAIL: {e}")
+        return 1
+    print(f"  authenticated, uid={odoo.uid}")
+
+    checks = 0
+    try:
+        mos = odoo.search_read("mrp.production", [], ["name", "product_id", "bom_id"])
+        print(f"  mrp.production        : {len(mos)} order(s)")
+        checks += 1
+        if mos:
+            mo = mos[0]
+            print(f"    first              : {mo['name']} -> {mo['product_id']}")
+            bom = odoo.read("mrp.bom", [mo["bom_id"][0]], ["bom_line_ids"])[0]
+            lines = odoo.read("mrp.bom.line", bom["bom_line_ids"],
+                              ["product_id", "product_qty", "uom"])
+            print(f"    nomenclature       : {len(lines)} line(s)")
+            checks += 1
+            for line in lines[:5]:
+                print(f"      - {line['product_id'][1]}: {line['product_qty']} {line.get('uom')}")
+    except Exception as e:                                  # noqa: BLE001
+        print(f"  FAIL while reading: {e}")
+        return 1
+
+    print(f"\n{checks} contract area(s) verified against the live instance.")
+    print("Run the full suite with:")
+    print(f"  ODOO_URL={a.url} ODOO_DB={a.db} ODOO_USER={a.user} ODOO_PASSWORD=*** "
+          "python -m pytest tests/test_odoo_contract.py -v")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())

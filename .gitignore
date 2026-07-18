@@ -20,3 +20,11 @@ Thumbs.db
 # Saved copy of the client's public website — reference material only.
 # Third-party copyrighted assets; not ours to redistribute.
 example from the site/
+
+# Internal working notes — README.md is the public document
+DOCUMENTATION.md
+
+# Runtime artefacts
+backend/audit_anchor.log
+backend/*.db-wal
+backend/*.db-shm
