@@ -74,7 +74,7 @@ ollama serve && ollama pull llama3.2 && ollama pull nomic-embed-text
 ### Tests
 
 ```bash
-python -m pytest tests/ -q          # 130 passed, 8 skipped
+python -m pytest tests/ -q          # 141 tests
 ```
 
 The 8 skips are the live-Odoo contract tests; see *Odoo* below for how to run them.
@@ -406,6 +406,18 @@ python -m backend.odoo_adapter --url https://erp.example.com --db medicka \
    whole chain to hide it — **the external anchor still catches it**.
 
 ---
+
+## Documentation
+
+| Document | What it answers |
+|---|---|
+| **[WHAT_IS_BUILT.md](docs/WHAT_IS_BUILT.md)** | A factual inventory of the software, and what is a mechanism rather than a measured result |
+| [BUSINESS_MODEL.md](docs/BUSINESS_MODEL.md) | Who buys it, pricing, licensing, KPIs and ROI |
+| [MIGRATION.md](docs/MIGRATION.md) | Leaving paper without stopping production |
+| [RESILIENCE.md](docs/RESILIENCE.md) | What happens when the hardware fails |
+
+The two *Idea Document* files are the original submission and are marked
+superseded — the software has moved well past them.
 
 ## Commercial model & rollout
 

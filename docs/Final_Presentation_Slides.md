@@ -156,18 +156,31 @@ Odoo (MO/BOM) → Production → Pack I → Pack II → Quality → Release
 
 ## SLIDE 9 — Financial Forecasts & Key Figures
 
-> **Data Room:** missing — no 5-year revenue / IRR in the repo. Below = **estimated impact** (idea doc) + blanks to fill.
+> **Data Room:** missing — no 5-year revenue / IRR in the repo. The figures below
+> come from `docs/BUSINESS_MODEL.md`, which computes them from the repository's
+> own BOM rather than estimating. Do not quote a number that is not in that file.
 
-### Operational impact (assumption ~10 batches / week)
+### Operational impact (240 lots / year — 5 lines × ~4 lots / month)
 
-| Lever | Before | With BatchTwin | Gain |
-|---|---|---|---|
-| QA batch-record review | ~3 h / batch | ~30 min | −~25 h / week |
-| Operator documentation | ~45 min | ~15 min | −~5 h / week |
-| Material loss | invisible | measured | 0.5–1% (≈ €20–45k / year) |
-| Batch release | days | hours | cash + capacity |
+| Lever | Basis | Annual |
+|---|---|---|
+| QA review 3 h → 1.5 h / lot | published 40–60 % reduction, taken at the **low** end | **€6,480** |
+| Material loss made visible | 0.4 % of €400/lot material spend | **€384** |
+| Expiry write-off avoided | 30 % of VÉRA's €3,035 exposure | **€911** |
+| Deviations avoided | 2 / yr × €1,200 | **€2,400** |
+| **Total** | | **≈ €10,200 / yr** |
 
-**Net estimate:** ~**30 skilled hours / week** + right-first-time docs + COGS / energy.
+**Say this plainly:** against a €14,400 subscription, **efficiency alone does not
+pay it back at this volume** — it turns positive near 400 lots/year. The purchase
+is justified by risk, not efficiency: a regulatory finding on batch records, a
+recall from undetected drift, or a failed customer audit each cost more than a
+decade of subscription. That is exactly why the buyer is the person who signs
+release.
+
+> An earlier version of this slide claimed €20–45k/year from material loss alone.
+> That was ~22× the repository's own numbers (520 lots × €400 = €208k of material
+> spend; 1 % of it is €2,080, not €45k) and it contradicted BUSINESS_MODEL.md.
+> Corrected — an investor who checks the arithmetic will check this one.
 
 ### To complete (Data Room)
 

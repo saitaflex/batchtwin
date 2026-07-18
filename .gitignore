@@ -32,3 +32,6 @@ backend/*.db-shm
 # telemetry time-series store (separate from the batch record, own retention)
 backend/telemetry.db
 backend/telemetry.db-*
+
+# stale internal review note, superseded by docs/WHAT_IS_BUILT.md
+docs/PRODUCT_REVIEW.md

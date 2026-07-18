@@ -5,6 +5,16 @@
 
 > **Odoo tells you what should happen. BatchTwin captures what actually happens — and closes the gap in cost, quality, compliance, and carbon, automatically.**
 
+> **⚠ Snapshot — superseded.** This document describes BatchTwin as submitted at
+> the idea stage. The software has moved on substantially since: authentication
+> and Part 11 re-signing, the DCOI/DCOII split into five lifecycle stages, a
+> versioned product catalog, deviations and CAPA, configurable industry
+> profiles, the parallel-run migration path, and telemetry separation are all
+> absent here. For what the software contains today see
+> [WHAT_IS_BUILT.md](WHAT_IS_BUILT.md); for the commercial model see
+> [BUSINESS_MODEL.md](BUSINESS_MODEL.md). Kept as the record of what was
+> originally proposed.
+
 ## 1. Problem statement
 
 Makers of food supplements live and die by one document: the **batch record** (dossier de lot). It proves, batch by batch, what was made, from which raw materials, tested how, and released by whom — across four legally-required sections: **Production, Conditionnement (packaging), Qualité, and Libération (release)**. Our design partner, **Medicka Laboratories** (Nabeul, Tunisia — GMP-certified since 2010, ~100 staff, 309 products, two-thirds of them oral liquids), still keeps that entire record on **paper**.

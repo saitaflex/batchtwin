@@ -5,6 +5,16 @@
 
 > **Most inventory AI forecasts demand on numbers that are already wrong. VÉRA corrects reality first — real consumption, not theoretical recipes — then forecasts, sees expiry, and turns stock into a ranked decision queue.**
 
+> **⚠ Snapshot — superseded.** This document describes BatchTwin as submitted at
+> the idea stage. The software has moved on substantially since: authentication
+> and Part 11 re-signing, the DCOI/DCOII split into five lifecycle stages, a
+> versioned product catalog, deviations and CAPA, configurable industry
+> profiles, the parallel-run migration path, and telemetry separation are all
+> absent here. For what the software contains today see
+> [WHAT_IS_BUILT.md](WHAT_IS_BUILT.md); for the commercial model see
+> [BUSINESS_MODEL.md](BUSINESS_MODEL.md). Kept as the record of what was
+> originally proposed.
+
 ## 1. Problem statement
 
 For a manufacturer, inventory is where cash goes to hide. It typically ties up **20–30% of working capital**, and holding it costs another **20–30% of its value per year** (storage, financing, insurance, obsolescence). Get it wrong in either direction and you lose: too little → **stockouts** that halt production and lose sales (AI-grade forecasting can recover **up to 65% of lost sales**, per this challenge's own brief); too much → frozen cash and, for perishables, **expiry write-offs** — stock destroyed unsold.
