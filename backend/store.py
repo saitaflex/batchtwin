@@ -359,38 +359,35 @@ def build_workflow_summary(batch: dict, stages: list[dict], signatures: list[dic
     qc_fail = sum(1 for s in qc_samples if s.get("verdict") == "FAIL")
     has_release = stage_status.get("liberation") == "signed"
 
-    if batch.get("state") == "released" or has_release:
+    # The API returns translation KEYS, never prose. The client speaks three
+    # languages; the server has no business deciding which one the operator reads.
+    if batch.get("state") == "rejected":
+        status = "rejected"
+    elif batch.get("state") == "released" or has_release:
         status = "released"
-        headline = "Release complete"
-        notifications = ["Release complete", "The dossier is fully signed and ready for archive."]
     elif qc_fail:
         status = "quality_review"
-        headline = "Quality review required"
-        notifications = ["Quality review required", f"{qc_fail} quality check(s) failed and blocked release."]
     elif signed_count >= len(stages):
         status = "approved"
-        headline = "Approval ready"
-        notifications = ["Approval ready", "All stages are signed and only final release remains."]
     elif signed_count > 0:
         status = "in_production"
-        headline = "In production"
-        notifications = ["In production", "The batch is moving through production and quality review."]
     else:
         status = "draft"
-        headline = "Draft dossier"
-        notifications = ["Draft dossier", "Start line clearance and weigh-in to begin the batch record."]
 
     pending = [s.get("name") for s in stages if s.get("status") != "signed"]
+    notes: list[dict] = [{"key": f"wf_note_{status}",
+                          "args": {"n": qc_fail} if status == "quality_review" else {}}]
     if pending:
-        notifications.append("Next: " + ", ".join(pending))
+        notes.append({"key": "wf_note_next", "args": {"stages": ", ".join(pending)},
+                      "stages": pending})
     if signatures:
-        notifications.append("Electronic signatures recorded")
+        notes.append({"key": "wf_note_signed", "args": {"n": len(signatures)}})
 
     return {
         "status": status,
-        "headline": headline,
+        "headline_key": f"wf_{status}",
         "progress": int(round(100 * signed_count / max(1, len(stages)), 0)),
-        "notifications": notifications,
+        "notes": notes,
         "signed_count": signed_count,
         "pending_stages": pending,
         "quality_failures": qc_fail,

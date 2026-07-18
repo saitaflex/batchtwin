@@ -551,23 +551,50 @@ function formatBytes(n) {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
+/* The API sends translation keys, never sentences — so this panel speaks the
+   operator's language like the rest of the app. */
 function renderWorkflow(d, docs, tasks) {
-  const wf = d.workflow || {};
-  const statusText = wf.headline || "Draft dossier";
-  const progress = wf.progress || 0;
-  const badgeClass = wf.status === "released" ? "good" : wf.status === "quality_review" ? "warn" : wf.status === "draft" ? "neutral" : "neutral";
+  // The summary lives on the batch, not on the response envelope. Reading
+  // d.workflow silently yielded {} and the panel always showed the draft
+  // fallback, whatever the batch was actually doing.
+  const wf = d.batch.workflow || {};
+  const status = wf.status || "draft";
+  const headline = T(wf.headline_key || "wf_draft");
+  const badgeClass = status === "released" ? "good"
+    : status === "rejected" ? "crit"
+    : status === "quality_review" ? "warn"
+    : status === "approved" ? "good" : "neutral";
   $("#workflow-status").className = `badge ${badgeClass}`;
-  $("#workflow-status").textContent = statusText;
-  $("#workflow-headline").innerHTML = `<strong>${statusText}</strong><div style="color:var(--muted);font-size:12px;margin-top:3px">${wf.status || "draft"}</div>`;
-  $("#workflow-progress-bar").style.width = `${progress}%`;
-  $("#workflow-doc-count").textContent = `${docs.length} docs`;
-  const notesMarkup = (wf.notifications || []).map(item => `<div class="item">${item}</div>`).join("");
-  const taskMarkup = tasks.map(task => `<div class="item"><strong>${task.title}</strong><div style="color:var(--muted);margin-top:3px">${task.detail}</div></div>`).join("");
-  $("#workflow-notes-inline").innerHTML = notesMarkup || taskMarkup || `<div class="item">No pending actions.</div>`;
-  $("#workflow-notes-panel").innerHTML = taskMarkup || notesMarkup || `<div class="item">No pending actions.</div>`;
+  $("#workflow-status").textContent = headline;
+  $("#workflow-headline").innerHTML =
+    `<strong>${esc(headline)}</strong>
+     <div style="color:var(--muted);font-size:12px;margin-top:3px">${T("wf_sub_" + status)}</div>`;
+  $("#workflow-progress-bar").style.width = `${wf.progress || 0}%`;
+  $("#workflow-doc-count").textContent = TF("wf_docs_n", {n: docs.length});
+
+  const noteMarkup = (wf.notes || []).map(n => {
+    // A "next stage" note names raw stage keys; show their translated labels.
+    const args = {...(n.args || {})};
+    if (n.stages) args.stages = n.stages.map(STAGE_LABEL).join(", ");
+    return `<div class="item">${esc(TF(n.key, args))}</div>`;
+  }).join("");
+
+  // Several dossiers can raise the same task (weighing appears in DFA and DCT);
+  // show it once.
+  const taskMarkup = [...new Set(tasks.map(t => t.key))].map(k =>
+    `<div class="item"><strong>${esc(T(k + "_t"))}</strong>
+     <div style="color:var(--muted);margin-top:3px">${esc(T(k + "_d"))}</div></div>`).join("");
+
+  const empty = `<div class="item">${T("wf_no_actions")}</div>`;
+  $("#workflow-notes-inline").innerHTML = noteMarkup || taskMarkup || empty;
+  $("#workflow-notes-panel").innerHTML = taskMarkup || noteMarkup || empty;
+
   const docMarkup = docs.length
-    ? docs.slice(0, 6).map(doc => `<a class="doc-pill" href="/dossier/${encodeURIComponent(doc.name)}" target="_blank" rel="noopener"><strong>${doc.name}</strong><small>${doc.kind.toUpperCase()} · ${formatBytes(doc.size_bytes)}</small></a>`).join("")
-    : `<div class="item">Dossier pack is being prepared.</div>`;
+    ? docs.slice(0, 6).map(doc =>
+        `<a class="doc-pill" href="/dossier/${encodeURIComponent(doc.name)}" target="_blank" rel="noopener">
+           <strong>${esc(doc.name)}</strong>
+           <small>${esc(doc.kind.toUpperCase())} · ${formatBytes(doc.size_bytes)}</small></a>`).join("")
+    : `<div class="item">${T("wf_docs_empty")}</div>`;
   $("#workflow-docs-inline").innerHTML = docMarkup;
   $("#workflow-docs-panel").innerHTML = docMarkup;
 }

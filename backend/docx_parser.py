@@ -22,28 +22,33 @@ def extract_docx_tasks(path: str | Path) -> List[Dict[str, str]]:
     if not text:
         return []
 
-    lowered = text.upper()
-    title = ""
-    if "Dossier de conditionnement primaire" in text or "DCOI" in text.upper():
-        title = "Primary packaging workflow"
-    elif "Dossier de conditionnement secondaire" in text or "DCOII" in text.upper():
-        title = "Secondary packaging workflow"
-    elif "Dossier de fabrication" in text or "DFA" in text.upper():
-        title = "Manufacturing workflow"
-    elif "Dossier de contrôle" in text or "DCT" in text.upper():
-        title = "Quality control workflow"
+    upper = text.upper()
+    # Classify on the TITLE only. Every dossier mentions "contrôle" somewhere in
+    # its body, so scanning the whole text makes each one look like the DCT.
+    head = upper[:300].replace("Ô", "O")
+    if "CONDITIONNEMENT SECONDAIRE" in head:
+        doc_key = "DCOII"
+    elif "CONDITIONNEMENT PRIMAIRE" in head:
+        doc_key = "DCOI"
+    elif "DOSSIER DE FABRICATION" in head:
+        doc_key = "DFA"
+    elif "DOSSIER DE CONTROLE" in head:
+        doc_key = "DCT"
     else:
-        title = "Document workflow"
+        doc_key = "DOC"
 
+    # Translation keys, not prose: the UI renders these in EN / FR / AR.
     tasks = []
-    if "OPERATEURSDEMISEENBLISTERS" in lowered or "mise en blisters" in lowered:
-        tasks.append({"title": "Primary packaging line clearance", "detail": "Verify the primary packaging line, maintain the blisters and aluminium roll setup, and confirm the operator log is complete."})
-    if "mise en etuis" in lowered or "mise en caisses" in lowered:
-        tasks.append({"title": "Secondary packaging handoff", "detail": "Confirm carton and label availability, verify the pack-out sequence, and complete the secondary packaging sign-off."})
-    if "pesée" in lowered or "verification prealable" in lowered:
-        tasks.append({"title": "Weighing and line preparation", "detail": "Complete the pre-use verification, weigh the active ingredients, and attach the required release evidence."})
-    if "contrôle" in lowered and "ipc" in lowered:
-        tasks.append({"title": "In-process quality review", "detail": "Review the IPC checks, confirm sampling and acceptance criteria, and escalate any deviation before release."})
+    if "OPERATEURSDEMISEENBLISTERS" in upper or "MISE EN BLISTERS" in upper:
+        tasks.append({"key": "task_blister"})
+    if "MISE EN ETUIS" in upper or "MISE EN CAISSES" in upper:
+        tasks.append({"key": "task_carton"})
+    if "PESÉE" in upper or "PESEE" in upper or "VERIFICATION PREALABLE" in upper:
+        tasks.append({"key": "task_weighing"})
+    if ("CONTRÔLE" in upper or "CONTROLE" in upper) and "IPC" in upper:
+        tasks.append({"key": "task_ipc"})
     if not tasks:
-        tasks.append({"title": title, "detail": "Review the source dossier and close the corresponding GMP step before release."})
+        tasks.append({"key": "task_generic"})
+    for t in tasks:
+        t["doc_key"] = doc_key
     return tasks

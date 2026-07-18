@@ -625,31 +625,31 @@
 
   <div class="ops-banner">
     <div class="ops-title">
-      <strong>Operational readiness</strong>
-      <span>Production, packaging, quality and release are coordinated around the live dossier.</span>
+      <strong data-i18n="ops_title">Prêt pour la libération</strong>
+      <span data-i18n="ops_sub">Production, conditionnement, qualité et libération sont coordonnés autour du dossier vivant.</span>
     </div>
     <div class="ops-tags">
-      <span>Primary packaging</span>
-      <span>Secondary packaging</span>
-      <span>Quality control</span>
-      <span>Release review</span>
+      <span data-i18n="ops_t1">Conditionnement primaire</span>
+      <span data-i18n="ops_t2">Conditionnement secondaire</span>
+      <span data-i18n="ops_t3">Contrôle qualité</span>
+      <span data-i18n="ops_t4">Revue de libération</span>
     </div>
   </div>
 
   <div class="card" id="workflow-card">
-    <h2>Release control tower</h2>
-    <div class="cap">A Medicka-style operational view of the current batch state, the next GMP sign-off, and the supporting manufacturing and quality dossier pack.</div>
+    <h2 data-i18n="wf_title">Tour de contrôle de la libération</h2>
+    <div class="cap" data-i18n="wf_cap">Vue opérationnelle de l'état du lot, de la prochaine signature GMP et des dossiers de fabrication et de qualité associés.</div>
     <div class="workflow-grid">
       <div class="workflow-panel">
         <div class="workflow-head">
           <div id="workflow-headline">—</div>
-          <span class="badge neutral" id="workflow-status">Draft</span>
+          <span class="badge neutral" id="workflow-status">—</span>
         </div>
         <div class="workflow-progress"><span id="workflow-progress-bar" style="width:0%"></span></div>
         <div class="workflow-list" id="workflow-notes-inline"></div>
       </div>
       <div class="workflow-panel">
-        <div class="workflow-head"><strong>Dossier pack</strong><span class="badge neutral" id="workflow-doc-count">0 docs</span></div>
+        <div class="workflow-head"><strong data-i18n="wf_pack">Dossiers source</strong><span class="badge neutral" id="workflow-doc-count">—</span></div>
         <div class="doc-list" id="workflow-docs-inline"></div>
       </div>
     </div>
@@ -664,10 +664,10 @@
   </div>
 
   <div class="tab-nav" role="tablist" aria-label="Employee workspace">
-    <button class="tab-btn active" data-tab="overview" type="button" data-i18n="tab_overview">Overview</button>
-    <button class="tab-btn" data-tab="production" type="button" data-i18n="tab_production">Production</button>
-    <button class="tab-btn" data-tab="quality" type="button" data-i18n="tab_quality">Quality</button>
-    <button class="tab-btn" data-tab="documents" type="button" data-i18n="tab_documents">Documents</button>
+    <button class="tab-btn active" data-tab="overview" type="button" data-i18n="tab_overview" data-i18n="tab_overview">Vue d'ensemble</button>
+    <button class="tab-btn" data-tab="production" type="button" data-i18n="tab_production" data-i18n="tab_production">Production</button>
+    <button class="tab-btn" data-tab="quality" type="button" data-i18n="tab_quality" data-i18n="tab_quality">Qualité</button>
+    <button class="tab-btn" data-tab="documents" type="button" data-i18n="tab_documents" data-i18n="tab_documents">Documents</button>
   </div>
 
   <div class="tab-panel active" data-panel="overview">
@@ -799,8 +799,8 @@
       <div class="doc-list" id="workflow-docs-panel"></div>
     </div>
     <div class="card">
-      <h2>Daily release actions</h2>
-      <div class="cap">A concise guide for operators and supervisors to keep the manufacturing and quality workflow moving.</div>
+      <h2 data-i18n="wf_actions">Actions du jour</h2>
+      <div class="cap" data-i18n="wf_actions_cap">Guide concis pour les opérateurs et responsables afin de faire avancer le flux fabrication-qualité.</div>
       <div class="workflow-list" id="workflow-notes-panel"></div>
     </div>
   </div>

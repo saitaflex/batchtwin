@@ -23,7 +23,13 @@ class DocxParserTests(unittest.TestCase):
 
         tasks = docx_parser.extract_docx_tasks(doc_path)
         self.assertTrue(tasks)
-        self.assertTrue(any(task["title"].lower().startswith("primary") for task in tasks))
+        # Tasks carry translation keys, not English sentences: the operators are
+        # French-speaking and the UI renders EN / FR / AR from the same payload.
+        self.assertIn("task_blister", [t["key"] for t in tasks])
+        for t in tasks:
+            self.assertRegex(t["key"], r"^task_[a-z]+$")
+            self.assertNotIn("title", t, "no prose may travel from the server")
+        self.assertEqual({t["doc_key"] for t in tasks}, {"DCOI"})
 
 
 class DocxFormTests(unittest.TestCase):
