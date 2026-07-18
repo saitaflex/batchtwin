@@ -195,3 +195,66 @@ class SecurityHeaderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TelemetrySeparationTests(unittest.TestCase):
+    """High-frequency data must not live in the batch-record database.
+
+    One sensor at 1 Hz is 28,800 rows per shift. Sharing a file with the legal
+    record creates a retention conflict, a slow restore, and write contention
+    with the one transaction that must never wait: the signature.
+    """
+
+    def setUp(self):
+        from backend import telemetry
+        self.tel = telemetry.TelemetryStore(Path(tempfile.mkdtemp()) / "t.db")
+        self.tel.init()
+
+    def _shift(self, batch_id=1, n=1000, machine="MX-01"):
+        now = dt.datetime.now().astimezone()
+        return [{"batch_id": batch_id, "machine": machine, "channel": "temperature",
+                 "value": 22 + (i % 3), "unit": "C",
+                 "at": (now - dt.timedelta(seconds=n - i)).isoformat()}
+                for i in range(n)]
+
+    def test_telemetry_lives_in_its_own_database(self):
+        from backend import store as record_store
+        self.assertNotEqual(self.tel.path, record_store.DB_PATH,
+                            "telemetry must not share the record database")
+
+    def test_a_full_shift_of_one_sensor_ingests(self):
+        self.assertEqual(self.tel.write_many(self._shift(n=28800)), 28800)
+        self.assertEqual(self.tel.stats()["readings"], 28800)
+
+    def test_the_record_carries_an_aggregate_not_every_sample(self):
+        """The point of the separation, in one assertion."""
+        self.tel.write_many(self._shift(n=28800))
+        agg = self.tel.aggregate(1)
+        self.assertEqual(len(agg), 1, "one row per machine+channel, not per sample")
+        self.assertEqual(agg[0]["n"], 28800)
+        self.assertEqual(agg[0]["mn"], 22.0)
+        self.assertEqual(agg[0]["mx"], 24.0)
+
+    def test_aggregates_separate_metered_from_hand_entered(self):
+        rows = self._shift(n=90)
+        for r in rows[:10]:
+            r["source"] = "manual"
+        self.tel.write_many(rows)
+        agg = self.tel.aggregate(1)[0]
+        self.assertEqual(agg["manual"], 10)
+        self.assertEqual(agg["automatic_pct"], 89)
+
+    def test_channels_and_machines_are_aggregated_separately(self):
+        self.tel.write_many(self._shift(n=50, machine="MX-01"))
+        self.tel.write_many(self._shift(n=50, machine="FL-01"))
+        self.assertEqual(len(self.tel.aggregate(1)), 2)
+
+    def test_pruning_ages_out_raw_data(self):
+        old = (dt.datetime.now().astimezone() - dt.timedelta(days=60)).isoformat()
+        self.tel.write_many([{"batch_id": 1, "machine": "MX-01", "channel": "temperature",
+                              "value": 22.0, "at": old}] * 100)
+        self.tel.write_many(self._shift(n=10))
+        self.assertEqual(self.tel.stats()["readings"], 110)
+        self.tel.prune(days=30)
+        self.assertEqual(self.tel.stats()["readings"], 10,
+                         "old raw readings age out; the dossier keeps the aggregate")

@@ -28,3 +28,7 @@ DOCUMENTATION.md
 backend/audit_anchor.log
 backend/*.db-wal
 backend/*.db-shm
+
+# telemetry time-series store (separate from the batch record, own retention)
+backend/telemetry.db
+backend/telemetry.db-*

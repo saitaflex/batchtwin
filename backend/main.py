@@ -20,7 +20,7 @@ from typing import Any
 
 from . import (store, analytics, report, assistant, inventory, equipment,
                docx_parser, docx_forms, auth, anchor, products, label_scan,
-               industry, observability, resilience)
+               industry, observability, resilience, telemetry)
 from .odoo_adapter import MockOdoo
 
 odoo = MockOdoo()
@@ -81,6 +81,7 @@ async def _observe(request: Request, call_next):
 @app.on_event("startup")
 def _startup():
     store.init_db()
+    telemetry.store.init()
     observability.event("app.start", profile=store.PROFILE["key"],
                         stages=len(store.STAGES))
 
@@ -350,6 +351,54 @@ def product_by_barcode(barcode: str, me: dict = Me):
     with store._conn() as c:
         p = products.by_barcode(c, barcode)
     return {"found": bool(p), "product": p, "barcode": barcode}
+
+
+# ---- telemetry: high-frequency data, deliberately in its own store ---------
+class TelemetryBody(BaseModel):
+    readings: list[dict]          # {machine, channel, value, unit?, at?, source?}
+    batch_id: int | None = None
+
+
+@app.post("/api/telemetry")
+def telemetry_ingest(body: TelemetryBody, me: dict = Me):
+    """Bulk ingest from an OPC UA / Modbus collector.
+
+    Writes to telemetry.db, never to the record database: one sensor at 1 Hz is
+    28,800 rows per shift and must not contend with signature transactions.
+    """
+    rows = [{**r, "batch_id": r.get("batch_id", body.batch_id)} for r in body.readings]
+    try:
+        n = telemetry.store.write_many(rows)
+    except (KeyError, TypeError) as e:
+        raise HTTPException(400, f"lecture invalide: {e}")
+    return {"ingested": n}
+
+
+@app.get("/api/telemetry/stats")
+def telemetry_stats(me: dict = Me):
+    """Proof the separation is real: size, retention and where it lives."""
+    return telemetry.store.stats()
+
+
+@app.get("/api/batch/{batch_id}/telemetry")
+def telemetry_for_batch(batch_id: int, machine: str | None = None,
+                        channel: str | None = None, me: dict = Me):
+    """Raw series for investigation; aggregates are what the dossier carries."""
+    return {"aggregate": telemetry.store.aggregate(batch_id),
+            "series": telemetry.store.series(batch_id, machine, channel),
+            "promoted": telemetry.promote_to_record(batch_id)}
+
+
+# ---- management KPIs --------------------------------------------------------
+@app.get("/api/kpis")
+def site_kpis(horizon_days: int = 90, me: dict = Me):
+    """Site-level performance. Everything is derived from existing records, so
+    no figure is maintained by hand or entered twice."""
+    batches = [store.get_batch(b["id"]) for b in store.list_batches()]
+    batches = [b for b in batches if b]
+    return {"kpis": analytics.site_kpis(batches, horizon_days),
+            "pareto": analytics.deviation_pareto(batches),
+            "migration": store.migration_status()}
 
 
 # ---- resilience: what happens when the hardware fails ----------------------

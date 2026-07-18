@@ -482,6 +482,33 @@
     background:none;border:1px solid var(--border);color:var(--ink-2)}
   .whoami .lo:hover{border-color:var(--critical);color:var(--critical)}
 
+  /* =============== management KPIs =============== */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-bottom:6px}
+  .kpi{padding:12px 13px;border-radius:13px;background:var(--fill);border:1px solid var(--border)}
+  .kpi .k{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  .kpi .v{font-size:23px;font-weight:750;margin-top:4px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .kpi .d{font-size:11px;color:var(--muted);margin-top:2px}
+  .kpi.good .v{color:var(--good)} .kpi.warn .v{color:var(--warning)} .kpi.bad .v{color:var(--critical)}
+  .kpi.na .v{color:var(--muted);font-size:17px}
+  .kpi-split{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  .kpi-split h4{margin:0 0 8px;font-size:11px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--series)}
+  @media (max-width:760px){.kpi-split{grid-template-columns:1fr}}
+  .par{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--grid);font-size:12.5px}
+  .par:last-child{border-bottom:none}
+  .par .n{min-width:26px;font-weight:800;font-variant-numeric:tabular-nums}
+  .par .bar{flex:1;height:6px;border-radius:999px;background:var(--fill-2);overflow:hidden}
+  .par .bar span{display:block;height:100%;background:linear-gradient(90deg,#f87171,#fbbf24)}
+  .par .t{flex:2;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mig{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--grid);font-size:12.5px}
+  .mig:last-child{border-bottom:none}
+  .mig .c{font-family:ui-monospace,monospace;font-size:11px;min-width:52px;color:var(--muted)}
+  .mig .st{margin-inline-start:auto;font-size:10px;font-weight:800;padding:3px 9px;border-radius:999px}
+  .mig .st.cutover{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+  .mig .st.ready{background:color-mix(in srgb,var(--series) 22%,transparent);color:var(--series)}
+  .mig .st.parallel{background:color-mix(in srgb,var(--warning) 20%,transparent);color:var(--warning)}
+  .mig .st.not_started{background:var(--fill-2);color:var(--muted)}
+
   /* =============== product catalog =============== */
   .modal-card.wide{width:min(100%,760px);max-height:92vh;overflow-y:auto}
   .prodbtn{display:flex;align-items:center;gap:10px;min-height:46px;padding:5px 12px 5px 6px;cursor:pointer;
@@ -809,6 +836,23 @@
   </div>
 
   <div class="tab-panel active" data-panel="overview">
+    <div class="card" id="site-card">
+      <h2><span data-i18n="kpi_title">Performance du site</span>
+        <span class="badge neutral" id="kpi-horizon">90 j</span></h2>
+      <div class="cap" data-i18n="kpi_cap">Calculé à partir des enregistrements existants — aucun chiffre n'est saisi deux fois ni tenu à la main.</div>
+      <div class="kpis" id="site-kpis"></div>
+      <div class="kpi-split">
+        <div>
+          <h4 data-i18n="kpi_pareto">Déviations récurrentes</h4>
+          <div id="kpi-pareto"></div>
+        </div>
+        <div>
+          <h4 data-i18n="kpi_migration">Sortie du papier</h4>
+          <div id="kpi-migration"></div>
+        </div>
+      </div>
+    </div>
+
     <div id="lothead" class="row" style="justify-content:space-between;margin-bottom:16px">
       <div>
         <h2 id="lotname" style="font-size:18px">—</h2>

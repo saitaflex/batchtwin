@@ -74,7 +74,7 @@ ollama serve && ollama pull llama3.2 && ollama pull nomic-embed-text
 ### Tests
 
 ```bash
-python -m pytest tests/ -q          # 91 passed, 8 skipped
+python -m pytest tests/ -q          # 130 passed, 8 skipped
 ```
 
 The 8 skips are the live-Odoo contract tests; see *Odoo* below for how to run them.
@@ -435,6 +435,46 @@ stays legally binding; QA compares; then that line alone cuts over.
 
 First line live in ~8 weeks, whole site in ~4–5 months, zero production stoppage.
 Rollback is a role-gated field change, not a project.
+
+## Beyond pharma — configurable industry profiles
+
+The GMP vocabulary used to be hardcoded. The *mechanics* are the product; the
+rulebook is data. Four profiles ship, and a customer adds an industry by dropping
+a JSON file in `backend/profiles/` — proven by a test that loads a chemicals
+profile with its own stages, roles and terminology and no code change.
+
+| Profile | Stages | Release signed by | Formula tolerance |
+|---|---|---|---|
+| Pharma GMP (Annex 11 / Part 11) | 5 | PRT (pharmacist) | ±5 % |
+| Cosmetics (ISO 22716) | 4 | QA | ±5 % |
+| Food (HACCP / IFS) | 4 | HACCP lead | ±10 % |
+| Medical device (ISO 13485) | 5 | Regulatory | ±2 % |
+
+Switching profile never rewrites history: a batch stores the rulebook it was
+opened under and is always displayed and repaired against *that* lifecycle.
+
+## Resilience & operations
+
+**[docs/RESILIENCE.md](docs/RESILIENCE.md)** — eight failure modes with detection,
+behaviour, what the record shows and how to recover. The governing rule: *losing
+an instrument must never block production, and must never let an unverified value
+into the record silently.* A test asserts no failure mode halts the line.
+
+Telemetry is **not** in the batch-record database. One sensor at 1 Hz is 28,800
+rows per shift; measured, that is 4.14 MB in a separate store and **one row** in
+the record. Separate retention (30 days), `synchronous=OFF` for telemetry vs
+durable for the record, and no write contention with the signature transaction.
+
+Operations: JSON logs with a request id and resolved user on every line, secret
+redaction, per-client rate limiting (login 10 / 5 min), and security headers.
+
+## Management KPIs
+
+`GET /api/kpis` and the Overview tab: batches, right-first-time, median release
+cycle, deviations per batch, material loss, average yield — plus a deviation
+Pareto and per-line migration progress. All derived from records that already
+exist, so nothing is entered twice. Below three closed batches it reports
+*insufficient data* rather than a comforting 100 %.
 
 ## Honest limits
 

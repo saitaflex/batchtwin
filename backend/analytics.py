@@ -31,6 +31,115 @@ def _constants(n: int) -> tuple[float, float, float]:
     return D2[n], D3_[n], D4[n]
 
 
+def site_kpis(batches: list[dict], horizon_days: int = 90) -> dict:
+    """Site-level KPIs -- the view a plant manager and an investor ask for.
+
+    Everything here is derived from records that already exist, so no number is
+    entered twice or maintained by hand. Where a figure cannot be computed
+    honestly (too few lots), it returns None rather than a comforting zero: a
+    dashboard that invents a 100% score is worse than one that says "not yet".
+    """
+    import datetime as _dt
+
+    cutoff = (_dt.datetime.now().astimezone() - _dt.timedelta(days=horizon_days))
+    recent = []
+    for b in batches:
+        try:
+            created = _dt.datetime.fromisoformat(b["created_at"])
+        except (ValueError, KeyError, TypeError):
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=cutoff.tzinfo)
+        if created >= cutoff:
+            recent.append((b, created))
+
+    n = len(recent)
+    if not n:
+        return {"lots": 0, "horizon_days": horizon_days, "insufficient_data": True}
+
+    released = [b for b, _ in recent if b.get("state") == "released"]
+    rejected = [b for b, _ in recent if b.get("state") == "rejected"]
+    closed = len(released) + len(rejected)
+
+    # Right first time: closed lots that released with no deviation at all.
+    clean = [b for b in released if not (b.get("deviations") or [])]
+    rft = round(len(clean) / closed * 100, 1) if closed else None
+
+    # Release cycle time: batch creation -> the liberation signature.
+    cycles = []
+    for b, created in recent:
+        sig = next((s for s in (b.get("signatures") or [])
+                    if s["stage"] == "liberation"), None)
+        if not sig:
+            continue
+        try:
+            signed = _dt.datetime.fromisoformat(sig["signed_at"])
+        except ValueError:
+            continue
+        if signed.tzinfo is None:
+            signed = signed.replace(tzinfo=created.tzinfo)
+        cycles.append((signed - created).total_seconds() / 3600)
+    cycle_h = round(st.median(cycles), 1) if cycles else None
+
+    # Deviations per lot, and how many are still open across the site.
+    devs = [d for b, _ in recent for d in (b.get("deviations") or [])]
+    open_devs = [d for d in devs if d.get("status") == "open"]
+
+    # Material loss, only over lots where weighing is actually complete.
+    losses, unit_costs, yields = [], [], []
+    for b, _ in recent:
+        mb = mass_balance(b.get("dispense") or [])
+        if mb.get("complete") and mb.get("loss_cost") is not None:
+            losses.append(mb["loss_cost"])
+        k = batch_kpis(b, mb, b.get("good_units"))
+        if k.get("true_unit_material_cost") is not None:
+            unit_costs.append(k["true_unit_material_cost"])
+        if k.get("yield_pct") is not None:
+            yields.append(k["yield_pct"])
+
+    return {
+        "horizon_days": horizon_days,
+        "lots": n,
+        "released": len(released),
+        "rejected": len(rejected),
+        "in_progress": n - closed,
+        "right_first_time_pct": rft,
+        "release_cycle_median_h": cycle_h,
+        "deviations_total": len(devs),
+        "deviations_open": len(open_devs),
+        "deviations_per_lot": round(len(devs) / n, 2),
+        "material_loss_eur": round(sum(losses), 2) if losses else None,
+        "material_loss_lots": len(losses),
+        "unit_cost_avg_eur": round(st.mean(unit_costs), 4) if unit_costs else None,
+        "yield_avg_pct": round(st.mean(yields), 1) if yields else None,
+        # Below this many closed lots a percentage is noise, not a KPI.
+        "insufficient_data": closed < 3,
+    }
+
+
+def deviation_pareto(batches: list[dict], top: int = 5) -> list[dict]:
+    """Which failures actually recur -- the list that tells you where to spend.
+
+    Grouped by title rather than by individual record, because "the filler
+    underfills" is the finding; five instances of it are the evidence.
+    """
+    counts: dict[str, dict] = {}
+    for b in batches:
+        for d in (b.get("deviations") or []):
+            key = d.get("title") or "?"
+            row = counts.setdefault(key, {"title": key, "n": 0, "open": 0,
+                                          "severity": d.get("severity"),
+                                          "kind": d.get("kind")})
+            row["n"] += 1
+            if d.get("status") == "open":
+                row["open"] += 1
+    total = sum(r["n"] for r in counts.values())
+    out = sorted(counts.values(), key=lambda r: -r["n"])[:top]
+    for r in out:
+        r["share_pct"] = round(r["n"] / total * 100, 1) if total else 0.0
+    return out
+
+
 def mass_balance(rows: list[dict]) -> dict:
     lines, theo_cost, real_cost, loss_cost = [], 0.0, 0.0, 0.0
     for r in rows:

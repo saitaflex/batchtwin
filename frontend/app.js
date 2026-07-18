@@ -247,6 +247,58 @@ function initDropdowns() {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
 }
 
+/* ================== management KPIs ==================
+   Site-level performance, derived from records that already exist. Where a
+   figure cannot be computed honestly it shows "—", never a comforting zero. */
+async function renderSiteKpis() {
+  let d;
+  try { d = await api("/api/kpis"); } catch (e) { return; }
+  const k = d.kpis;
+  $("#kpi-horizon").textContent = TF("kpi_days", {n: k.horizon_days});
+
+  const na = (v) => v === null || v === undefined;
+  const band = (v, good, warn, invert) => {
+    if (na(v)) return "na";
+    const ok = invert ? v <= good : v >= good;
+    const mid = invert ? v <= warn : v >= warn;
+    return ok ? "good" : mid ? "warn" : "bad";
+  };
+  const tiles = [
+    {k: T("kpi_lots"), v: k.lots, d: TF("kpi_lots_d", {r: k.released, p: k.in_progress}), c: ""},
+    {k: T("kpi_rft"), v: na(k.right_first_time_pct) ? "—" : k.right_first_time_pct + " %",
+     d: T("kpi_rft_d"), c: band(k.right_first_time_pct, 95, 85)},
+    {k: T("kpi_cycle"), v: na(k.release_cycle_median_h) ? "—" : num(k.release_cycle_median_h, 1) + " h",
+     d: T("kpi_cycle_d"), c: band(k.release_cycle_median_h, 24, 72, true)},
+    {k: T("kpi_dev"), v: na(k.deviations_per_lot) ? "—" : num(k.deviations_per_lot, 2),
+     d: TF("kpi_dev_d", {n: k.deviations_open}), c: band(k.deviations_per_lot, 0.2, 0.5, true)},
+    {k: T("kpi_loss"), v: na(k.material_loss_eur) ? "—" : money(k.material_loss_eur),
+     d: TF("kpi_loss_d", {n: k.material_loss_lots}), c: ""},
+    {k: T("kpi_yield"), v: na(k.yield_avg_pct) ? "—" : k.yield_avg_pct + " %",
+     d: T("kpi_yield_d"), c: band(k.yield_avg_pct, 97, 93)},
+  ];
+  $("#site-kpis").innerHTML = tiles.map(t =>
+    `<div class="kpi ${t.c}"><div class="k">${esc(t.k)}</div>
+     <div class="v">${esc(String(t.v))}</div><div class="d">${esc(t.d)}</div></div>`).join("")
+    + (k.insufficient_data
+        ? `<div class="kpi na" style="grid-column:1/-1"><div class="d">${T("kpi_thin")}</div></div>` : "");
+
+  const top = d.pareto[0] ? d.pareto[0].n : 1;
+  $("#kpi-pareto").innerHTML = d.pareto.length ? d.pareto.map(p => `
+    <div class="par"><span class="n">${p.n}×</span>
+      <span class="t" title="${esc(p.title)}">${esc(p.title)}</span>
+      <span class="bar"><span style="width:${Math.round(p.n / top * 100)}%"></span></span>
+      <span style="color:var(--muted);font-size:11px">${p.share_pct}%</span></div>`).join("")
+    : `<div class="note">${T("kpi_no_dev")}</div>`;
+
+  const lines = d.migration.lines || [];
+  $("#kpi-migration").innerHTML = lines.length ? lines.map(l => `
+    <div class="mig"><span class="c">${esc(l.code)}</span>
+      <span class="t">${esc(l.name.slice(0, 26))}</span>
+      <span style="color:var(--muted);font-size:11px">${l.qualified}/${l.required}</span>
+      <span class="st ${l.stage}">${T("mig_" + l.stage)}</span></div>`).join("")
+    : `<div class="note">${T("kpi_no_lines")}</div>`;
+}
+
 /* ================== product catalog ==================
    Every dossier belongs to one product VERSION. The picker is the entry point,
    and a new product can be created without leaving it. */
@@ -813,6 +865,7 @@ async function refresh() {
   render(d, a, dossier.documents || [], dossier.tasks || []);
   refreshEquipment();
   loadForms();
+  renderSiteKpis();
 }
 
 const STATUS_COLOR = {running: "var(--good)", warning: "var(--warning)", alarm: "var(--critical)"};
