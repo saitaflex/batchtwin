@@ -74,7 +74,7 @@ ollama serve && ollama pull llama3.2 && ollama pull nomic-embed-text
 ### Tests
 
 ```bash
-python -m pytest tests/ -q          # 53 passed, 8 skipped
+python -m pytest tests/ -q          # 77 passed, 8 skipped
 ```
 
 The 8 skips are the live-Odoo contract tests; see *Odoo* below for how to run them.
@@ -155,6 +155,74 @@ serialised and monotonic. Tested with real threads: parallel writers, parallel a
 appends, and four simultaneous signature attempts — of which exactly one wins.
 
 ---
+
+## Product catalog — every dossier belongs to a product
+
+A batch record only means something against a specific product specification, so
+the product is the entry point: you pick one (or create it) before any dossier
+exists, and the lot list is scoped to it.
+
+**Versioned, append-only.** In GMP a specification is a controlled document. When
+the formula or packaging changes you do not edit it — you issue a new version,
+and the old one stays exactly as it was, because lots already made against it
+must remain readable forever.
+
+```
+code    = PF201          <- stable identity
+version = 1, 2, 3 ...    <- immutable specifications
+status  = draft | active | superseded
+```
+
+- Exactly one version per code is `active`; a batch stores the `product_id` of
+  the precise version it was made against.
+- A new version **requires a reason**, and nutrients carry forward unless replaced.
+- Changing a specification field (name, strength, packaging, fill target, shelf
+  life…) forces a version. Fixing a storage note or an SKU does not —
+  `EDITABLE_IN_PLACE` draws that line explicitly.
+- A superseded version **cannot start a new batch**.
+
+**One template, every product.** Medicka's Word templates have the product
+printed into them — `Nom du produit | Probio D3 Green Castel ®` — which is
+exactly why a new product means a new document today. BatchTwin overlays the
+selected specification onto the identification block of all four dossiers, marks
+those cells as spec-driven, and makes them read-only: you change them by
+versioning the product, not by typing. 7 fields per dossier, on DFA, DCOI, DCOII
+and DCT alike.
+
+Batch parameters follow the same rule — fill target, tolerance, unit and shelf
+life come from the specification rather than from whatever the manufacturing
+order happened to carry. Lot numbers are `PF954-260718-001`, unique per product
+per day.
+
+### Composition capture — optional, three ways
+
+Nutrition data is never required. When you do want it:
+
+| Route | How |
+|---|---|
+| **Manual** | Add rows: nutrient, amount, unit, basis (per unit / per dose / per 100 g / per 100 mL), % NRV |
+| **Barcode / QR** | Decoded in the browser via `BarcodeDetector`, then resolved **against your own catalog** — scanning your own product finds it and offers to version it |
+| **Label photo** | OCR'd by a local Ollama vision model; the image never leaves the machine |
+
+Two deliberate choices:
+
+- **No third-party lookup.** A manufacturer's product data has no business being
+  sent to an external service, and the real use case — re-finding your own
+  product — needs no such call.
+- **Nothing scanned is ever saved directly.** Extracted values land in the form
+  marked as scanned, for review and correction first. An OCR guess is not a
+  specification.
+
+Image size is handled adaptively: a vision model turns pixels into tokens, and a
+620×760 label already costs ~18k against a 2B model's 16k window (`num_ctx` does
+not raise it). The encoder steps down through a resolution ladder until the
+server accepts the image, so a capable model keeps the detail and a small one
+still works.
+
+> **Honest limit:** on a machine with only a small vision model installed
+> (`granite3.2-vision:2b`), label OCR is slow and frequently returns nothing
+> usable. The UI says so, names the model, and points at
+> `ollama pull llama3.2-vision`. Manual entry is the primary path and always works.
 
 ## Digitalised dossiers
 
@@ -238,6 +306,8 @@ Odoo (MRP / BOM / products)          ← real execute_kw XML-RPC contract
         │
    odoo_adapter.py   MockOdoo ⇄ LiveOdoo  (drop-in swap)
         │
+   products.py       versioned product catalog + dossier adaptation
+   label_scan.py     local vision OCR for nutrition labels
    auth.py           identity, PBKDF2, sessions, Part 11 re-signing
    anchor.py         external append-only witness for the audit chain
    store.py          SQLite · GMP lifecycle · deviations · change control
@@ -248,7 +318,7 @@ Odoo (MRP / BOM / products)          ← real execute_kw XML-RPC contract
    assistant.py      Ollama RAG copilot (read-only)
    report.py         ReportLab PDF
         │
-   main.py           FastAPI · 63 routes
+   main.py           FastAPI · 73 routes
         │
    frontend/         vanilla HTML/CSS/JS · React+Recharts (vendored) for /vera
 ```
@@ -320,16 +390,19 @@ python -m backend.odoo_adapter --url https://erp.example.com --db medicka \
 ## Demo script (3 minutes)
 
 1. Sign in as `prod.karim`. Nothing renders before identity is established.
-2. **Documents** tab — the four real dossiers, parsed from Word, ready to fill on a tablet.
-3. **Production** — *⚡ Simuler pesée*: the tiles show real-vs-theoretical cost and the loss
+2. Click the **product chip** in the header: the catalog opens. Pick *Calcimax* —
+   it has no batch yet, so the app offers to open one, and every dossier now
+   reads Calcimax instead of the template's hardcoded product.
+3. **Documents** tab — the four real dossiers, parsed from Word, ready to fill on a tablet.
+4. **Production** — *⚡ Simuler pesée*: the tiles show real-vs-theoretical cost and the loss
    in €. Try editing a material: ≤ ±5 % applies, more goes to QA.
-4. **Quality** — *+ avec dérive* a few times: the SPC chart turns red and forecasts the
+5. **Quality** — *+ avec dérive* a few times: the SPC chart turns red and forecasts the
    breach. A failure **opens a deviation by itself**.
-5. Sign Fabrication — a **password is demanded**. Enter it, watch the stage lock.
-6. Try Libération: refused, and the message names precisely what is blocking.
-7. Sign in as `smq.leila`, close the deviation with a root cause and a CAPA (signed again).
-8. **⬇ Dossier de Lot (PDF)** — the paper binder, generated from the same records.
-9. Falsify a row in the database directly: the integrity badge turns red. Recompute the
+6. Sign Fabrication — a **password is demanded**. Enter it, watch the stage lock.
+7. Try Libération: refused, and the message names precisely what is blocking.
+8. Sign in as `smq.leila`, close the deviation with a root cause and a CAPA (signed again).
+9. **⬇ Dossier de Lot (PDF)** — the paper binder, generated from the same records.
+10. Falsify a row in the database directly: the integrity badge turns red. Recompute the
    whole chain to hide it — **the external anchor still catches it**.
 
 ---

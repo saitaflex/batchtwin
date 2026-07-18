@@ -152,6 +152,7 @@ async function boot() {
   if (!list.length) { await api("/api/seed?reset=true", {}); }
   const l2 = await api("/api/batches");
   BID = l2[0].id;
+  await loadProducts();
   await populateLots();
   await loadCatalog();
   await refresh();
@@ -159,14 +160,18 @@ async function boot() {
   initTabs();
   initDropdowns();
   initChangeForm();
+  initProducts();
   initOffline();
   window.onLangChange = () => { renderChips(); refresh(); };
 }
 
 async function populateLots() {
-  const list = await api("/api/batches");
+  // Scoped to the selected product, so the lot list is never a mixed bag.
+  const q = PRODUCT ? `?product_code=${encodeURIComponent(PRODUCT.code)}` : "";
+  let list = await api("/api/batches" + q);
+  if (!list.length) list = await api("/api/batches");
   $("#lotpick").innerHTML = list.map(b =>
-    `<option value="${b.id}" data-sub="${esc(b.product)}" ${b.id === BID ? "selected" : ""}>${esc(b.lot_name)}</option>`).join("");
+    `<option value="${b.id}" data-sub="${esc(b.product)}${b.product_version ? " · v" + b.product_version : ""}" ${b.id === BID ? "selected" : ""}>${esc(b.lot_name)}</option>`).join("");
   $("#lotpick").onchange = async (e) => {
     BID = +e.target.value;
     AI_HISTORY.length = 0; $("#ai-log").innerHTML = "";
@@ -225,6 +230,273 @@ function initDropdowns() {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
 }
 
+/* ================== product catalog ==================
+   Every dossier belongs to one product VERSION. The picker is the entry point,
+   and a new product can be created without leaving it. */
+let PRODUCTS = [], PRODUCT = null, PR_META = {dosage_forms: [], categories: [], nutrient_basis: []};
+let SCAN_OK = false, SCAN_MODEL = "", SCAN_CAPABLE = false;
+let PF_MODE = "create", PF_BASE = null;
+
+async function loadProducts() {
+  const r = await api("/api/products");
+  PRODUCTS = r.products;
+  PR_META = {dosage_forms: r.dosage_forms, categories: r.categories,
+             nutrient_basis: r.nutrient_basis};
+  try {
+    const h = await api("/api/scan/health");
+    SCAN_OK = h.available; SCAN_MODEL = h.model; SCAN_CAPABLE = !!h.capable;
+  } catch (e) { SCAN_OK = false; }
+}
+
+function paintProductButton(p) {
+  PRODUCT = p || null;
+  const btn = $("#prod-btn");
+  btn.hidden = !p;
+  if (!p) return;
+  $("#prod-av").textContent = p.code;
+  $("#prod-name").textContent = p.name;
+  $("#prod-meta").textContent = `${p.code} · v${p.version}` +
+    (p.strength ? ` · ${p.strength}` : "");
+}
+
+function openProductPicker() {
+  $("#prodmodal").hidden = false;
+  $("#pr-search").value = "";
+  renderProductList("");
+  setTimeout(() => $("#pr-search").focus(), 50);
+}
+
+function renderProductList(q) {
+  const needle = (q || "").toLowerCase().trim();
+  const hits = PRODUCTS.filter(p => !needle ||
+    [p.name, p.code, p.sku, p.strength].some(v => (v || "").toLowerCase().includes(needle)));
+  const forms = Object.fromEntries(PR_META.dosage_forms);
+  $("#pr-list").innerHTML = hits.length ? hits.map(p => `
+    <button class="pr-item" type="button" data-id="${p.id}">
+      <span class="pav">${esc(p.code)}</span>
+      <span class="tx"><b>${esc(p.name)}</b>
+        <small>${esc(forms[p.dosage_form] || p.dosage_form || "")}${p.strength ? " · " + esc(p.strength) : ""}${p.packaging ? " · " + esc(p.packaging) : ""}</small></span>
+      <span class="pr-ver">v${p.version}</span>
+    </button>`).join("") : `<div class="pr-empty">${T("pr_none")}</div>`;
+  $("#pr-list").querySelectorAll(".pr-item").forEach(b => b.onclick = () => selectProduct(+b.dataset.id));
+}
+
+/* Selecting a product is what scopes the workspace: the lot list narrows to
+   that product's batches, across all of its versions. If it has none yet, we
+   offer to open the first one -- a product with no dossier is a dead end. */
+async function selectProduct(id) {
+  const p = await api(`/api/products/${id}`);
+  $("#prodmodal").hidden = true;
+  paintProductButton(p);
+  localStorage.setItem("bt_product", String(id));
+
+  const lots = await api(`/api/batches?product_code=${encodeURIComponent(p.code)}`);
+  if (!lots.length) {
+    if (!confirm(TF("pr_no_lot", {name: p.name}))) return;
+    try {
+      const r = await api("/api/batches", {...actor(), product_id: p.id});
+      toast(TF("pr_lot_made", {lot: r.batch.lot_name}));
+      BID = r.batch_id;
+    } catch (e) { alert("⚠ " + e.message); return; }
+  } else {
+    BID = lots[lots.length - 1].id;      // most recent lot for this product
+  }
+  AI_HISTORY.length = 0;
+  const log = $("#ai-log"); if (log) log.innerHTML = "";
+  await populateLots();
+  await refresh();
+}
+
+/* ---- add / version a product ---- */
+function nutRow(n = {}) {
+  const basis = PR_META.nutrient_basis.map(([k, l]) =>
+    `<option value="${k}" ${n.basis === k ? "selected" : ""}>${esc(l)}</option>`).join("");
+  const cls = (n.source || "").startsWith("scan") ? "scanned" : "";
+  return `<div class="nut-row">
+    <input class="${cls}" data-f="label" placeholder="${T("pr_nut_label")}" value="${esc(n.label || "")}">
+    <input class="${cls}" data-f="amount" placeholder="${T("pr_nut_amount")}" value="${esc(n.amount ?? "")}">
+    <input class="${cls}" data-f="unit" placeholder="mg" value="${esc(n.unit || "")}">
+    <select data-f="basis">${basis}</select>
+    <input class="${cls}" data-f="nrv_pct" type="number" step="0.1" placeholder="%AR" value="${n.nrv_pct ?? ""}">
+    <button class="del" type="button" title="${T("pr_nut_del")}">✕</button>
+  </div>`;
+}
+
+function addNutRow(n) {
+  const box = $("#pf-nutrients");
+  box.insertAdjacentHTML("beforeend", nutRow(n));
+  const row = box.lastElementChild;
+  row.querySelector(".del").onclick = () => row.remove();
+}
+
+function collectNutrients() {
+  return [...$("#pf-nutrients").querySelectorAll(".nut-row")].map(r => {
+    const g = (f) => r.querySelector(`[data-f="${f}"]`).value.trim();
+    const nrv = g("nrv_pct");
+    return {label: g("label"), amount: g("amount") || null, unit: g("unit") || null,
+            basis: r.querySelector('[data-f="basis"]').value,
+            nrv_pct: nrv === "" ? null : parseFloat(nrv),
+            source: r.querySelector('[data-f="label"]').classList.contains("scanned")
+                    ? "scan_label" : "manual"};
+  }).filter(n => n.label);
+}
+
+const PF = {
+  code: "#pf-code", sku: "#pf-sku", name: "#pf-name", category: "#pf-category",
+  dosage_form: "#pf-form-sel", strength: "#pf-strength", packaging: "#pf-packaging",
+  units_per_pack: "#pf-units", barcode: "#pf-barcode", manufacturer: "#pf-manufacturer",
+  licensor: "#pf-licensor", shelf_life_months: "#pf-shelf", fill_target: "#pf-fill",
+  fill_tolerance: "#pf-tol", fill_unit: "#pf-unit", storage: "#pf-storage", notes: "#pf-notes",
+};
+const NUMERIC = new Set(["units_per_pack", "shelf_life_months", "fill_target", "fill_tolerance"]);
+
+function openProductForm(mode, base) {
+  PF_MODE = mode; PF_BASE = base || null;
+  $("#pfmodal").hidden = false;
+  $("#prodmodal").hidden = true;
+  $("#pf-err").hidden = true;
+  $("#pf-video").hidden = true;
+  $("#pf-scan").hidden = mode === "version";   // scanning is for capture, not re-spec
+  $("#pf-reason-wrap").hidden = mode !== "version";
+  $("#pf-title").textContent = mode === "version" ? T("pr_ver_title") : T("pr_new_title");
+  $("#pf-sub").textContent = mode === "version" ? T("pr_ver_sub") : T("pr_new_sub");
+  $("#pf-save").textContent = mode === "version" ? T("pr_ver_save") : T("pr_save");
+
+  $("#pf-category").innerHTML = PR_META.categories
+    .map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("");
+  $("#pf-form-sel").innerHTML = `<option value="">—</option>` + PR_META.dosage_forms
+    .map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("");
+
+  Object.entries(PF).forEach(([k, sel]) => { $(sel).value = base ? (base[k] ?? "") : ""; });
+  if (!base) { $("#pf-manufacturer").value = "Laboratoires MEDICKA"; $("#pf-shelf").value = 24; $("#pf-unit").value = "mL"; }
+  $("#pf-code").disabled = mode === "version";   // the code IS the product identity
+  $("#pf-nutrients").innerHTML = "";
+  ((base && base.nutrients) || []).forEach(addNutRow);
+  if (!$("#pf-nutrients").children.length) addNutRow();
+  $("#pf-cam").hidden = !("BarcodeDetector" in window);
+  $("#pf-ocr").hidden = !SCAN_OK;
+  // Be honest about a weak local model rather than let it fail silently.
+  $("#pf-scan-note").textContent = !SCAN_OK ? T("pr_scan_off")
+    : SCAN_CAPABLE ? T("pr_scan_note")
+    : TF("pr_scan_weak", {model: SCAN_MODEL});
+}
+
+function fillFromScan(fields) {
+  let n = 0;
+  Object.entries(PF).forEach(([k, sel]) => {
+    if (fields[k] == null || fields[k] === "") return;
+    const el = $(sel);
+    if (el.tagName === "SELECT") return;         // never guess a controlled list
+    el.value = fields[k];
+    el.classList.add("scanned");
+    n++;
+  });
+  if (fields.nutrients && fields.nutrients.length) {
+    $("#pf-nutrients").innerHTML = "";
+    fields.nutrients.forEach(x => addNutRow({...x, source: "scan_label"}));
+    n += fields.nutrients.length;
+  }
+  toast(TF("pr_scan_done", {n}));
+}
+
+/* Barcode: decoded in the browser, then resolved against OUR catalog. */
+async function scanBarcode() {
+  if (!("BarcodeDetector" in window)) { alert(T("pr_scan_nobarcode")); return; }
+  const video = $("#pf-video");
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "environment"}});
+  } catch (e) { alert(T("pr_scan_nocam")); return; }
+  video.hidden = false; video.srcObject = stream; await video.play();
+  const det = new BarcodeDetector({formats: ["ean_13", "ean_8", "code_128", "qr_code", "upc_a"]});
+  const stop = () => { stream.getTracks().forEach(t => t.stop()); video.hidden = true; };
+  const deadline = Date.now() + 25000;
+  (async function tick() {
+    if (Date.now() > deadline) { stop(); toast(T("pr_scan_timeout")); return; }
+    try {
+      const [hit] = await det.detect(video);
+      if (hit) {
+        stop();
+        const code = hit.rawValue;
+        $("#pf-barcode").value = code;
+        $("#pf-barcode").classList.add("scanned");
+        const found = await api(`/api/products/barcode/${encodeURIComponent(code)}`);
+        if (found.found) {
+          // Scanning your own product: offer to version it rather than duplicate.
+          if (confirm(TF("pr_scan_exists", {name: found.product.name, v: found.product.version}))) {
+            openProductForm("version", found.product);
+          }
+        } else { toast(TF("pr_scan_code", {code})); }
+        return;
+      }
+    } catch (e) { /* keep trying */ }
+    requestAnimationFrame(tick);
+  })();
+}
+
+/* Nutrition label: OCR'd by the local vision model, reviewed before saving. */
+function scanLabel() { $("#pf-file").click(); }
+
+async function onLabelFile(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  const b64 = await new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => res(String(fr.result));
+    fr.onerror = rej;
+    fr.readAsDataURL(file);
+  });
+  const note = $("#pf-scan-note");
+  const prev = note.textContent;
+  note.textContent = T("pr_scan_reading");
+  try {
+    const r = await api("/api/scan/label", {image: b64});
+    fillFromScan(r.fields);
+    note.textContent = r.note;
+  } catch (e) {
+    note.textContent = prev;
+    alert("⚠ " + e.message);
+  }
+}
+
+function initProducts() {
+  $("#prod-btn").onclick = openProductPicker;
+  $("#pr-close").onclick = () => { $("#prodmodal").hidden = true; };
+  $("#pr-search").oninput = (e) => renderProductList(e.target.value);
+  $("#pr-new").onclick = () => openProductForm("create", null);
+  $("#pf-cancel").onclick = () => { $("#pfmodal").hidden = true; };
+  $("#pf-addnut").onclick = () => addNutRow();
+  $("#pf-cam").onclick = scanBarcode;
+  $("#pf-ocr").onclick = scanLabel;
+  $("#pf-file").onchange = onLabelFile;
+
+  $("#pf-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const body = {...actor(), nutrients: collectNutrients()};
+    Object.entries(PF).forEach(([k, sel]) => {
+      const v = $(sel).value.trim();
+      body[k] = v === "" ? null : (NUMERIC.has(k) ? parseFloat(v) : v);
+    });
+    const err = $("#pf-err");
+    try {
+      let p;
+      if (PF_MODE === "version") {
+        body.change_reason = $("#pf-reason").value.trim();
+        if (!body.change_reason) throw new Error(T("pr_need_reason"));
+        p = await api(`/api/products/${PF_BASE.id}/version`, body);
+      } else {
+        p = await api("/api/products", body);
+      }
+      $("#pfmodal").hidden = true;
+      await loadProducts();
+      paintProductButton(p);
+      toast(TF("pr_saved", {code: p.code, v: p.version}));
+      openProductPicker();
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+  };
+}
+
 /* ============ digitalised dossiers: the real .docx, rendered fillable ============
    The backend parses dossier/*.docx into a section/table spec where every blank
    cell of the paper form is a typed field. We render exactly that layout, so an
@@ -263,10 +535,21 @@ async function renderForm(doc) {
   const lock = d.locked
     ? `<div class="frm-lock">🔒 ${TF("frm_locked", {stage: STAGE_LABEL(d.stage)})}</div>` : "";
   const meta = `<div class="frm-meta">${esc(d.form.title.slice(0, 150))} · ${esc(d.form.file)}</div>`;
+  const spec = d.product
+    ? `<div class="spec-banner">🧬 <b>${esc(d.product.name)}</b>
+         <span class="v">${esc(d.product.code)} v${d.product.version}</span>
+         <span style="color:var(--muted)">${TF("frm_spec_n", {n: d.form.spec_fields || 0})}</span></div>`
+    : `<div class="spec-banner" style="background:rgba(234,179,8,.1);border-color:var(--warning)">
+         ⚠ ${T("frm_no_product")}</div>`;
 
   const cell = (c, ri) => {
-    if (c.type === "label") return `<td class="lbl">${esc(c.text)}</td>`;
-    const key = c.key, val = v[key] || "";
+    // A value coming from the product specification is shown, marked, and not
+    // editable here: you change it by versioning the product, not by typing.
+    if (c.type === "label")
+      return `<td class="lbl ${c.from_spec ? "spec" : ""}">${esc(c.text)}</td>`;
+    const key = c.key, val = c.from_spec ? c.value : (v[key] || "");
+    if (c.from_spec)
+      return `<td><input class="frm-in spec" value="${esc(val)}" readonly></td>`;
     const dis = d.locked ? "disabled" : "";
     if (c.type === "choice") {
       return `<td><span class="frm-choice" data-key="${key}">` + c.options.map(o =>
@@ -294,7 +577,7 @@ async function renderForm(doc) {
     return `<div class="frm-sec">${s.heading ? `<h3>${esc(s.heading)}</h3>` : ""}${blocks}</div>`;
   }).join("");
 
-  $("#frm-body").innerHTML = lock + meta + body;
+  $("#frm-body").innerHTML = spec + lock + meta + body;
   wireForm(doc, d.locked);
 }
 
@@ -651,6 +934,7 @@ function render(d, a, docs, tasks) {
     : `<span class="badge warn">${T("state_open")}</span>`;
 
   FILL_UNIT = b.fill_unit || "mL";
+  if (b.product_spec) paintProductButton(b.product_spec);
   renderTiles(d);
   renderStepper(b, d.energy);
   renderChecklist(b);

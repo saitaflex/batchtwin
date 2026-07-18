@@ -5,6 +5,7 @@ Run:  python -m uvicorn backend.main:app --reload --port 8000
 Then open http://localhost:8000
 """
 from __future__ import annotations
+import copy
 import random
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 from typing import Any
 
 from . import (store, analytics, report, assistant, inventory, equipment,
-               docx_parser, docx_forms, auth, anchor)
+               docx_parser, docx_forms, auth, anchor, products, label_scan)
 from .odoo_adapter import MockOdoo
 
 odoo = MockOdoo()
@@ -125,6 +126,140 @@ def api_users():
         return {"users": auth.list_users(c)}
 
 
+# ---- product catalog --------------------------------------------------------
+class NutrientBody(BaseModel):
+    label: str
+    amount: str | None = None
+    unit: str | None = None
+    basis: str = "per_dose"
+    nrv_pct: float | None = None
+    source: str = "manual"
+
+
+class ProductBody(Actor):
+    code: str | None = None
+    name: str | None = None
+    sku: str | None = None
+    category: str | None = None
+    dosage_form: str | None = None
+    strength: str | None = None
+    packaging: str | None = None
+    units_per_pack: int | None = None
+    manufacturer: str | None = None
+    licensor: str | None = None
+    barcode: str | None = None
+    shelf_life_months: int | None = None
+    fill_target: float | None = None
+    fill_tolerance: float | None = None
+    fill_unit: str | None = None
+    storage: str | None = None
+    notes: str | None = None
+    nutrients: list[NutrientBody] | None = None
+    change_reason: str | None = None   # required when creating a new version
+
+
+def _product_payload(body: ProductBody) -> tuple[dict, list[dict] | None]:
+    data = body.model_dump(exclude={"user", "role", "nutrients", "change_reason"})
+    nutrients = None if body.nutrients is None else [n.model_dump() for n in body.nutrients]
+    return data, nutrients
+
+
+@app.get("/api/products")
+def products_list(include_superseded: bool = False):
+    with store._conn() as c:
+        return {"products": products.listing(c, include_superseded),
+                "dosage_forms": products.DOSAGE_FORMS,
+                "categories": products.CATEGORIES,
+                "nutrient_basis": products.NUTRIENT_BASIS}
+
+
+@app.get("/api/products/{product_id}")
+def product_get(product_id: int):
+    with store._conn() as c:
+        p = products.get(c, product_id)
+    if not p:
+        raise HTTPException(404, "produit introuvable")
+    p["dossier_prefill"] = products.dossier_prefill(p)
+    return p
+
+
+@app.post("/api/products")
+def product_create(body: ProductBody):
+    data, nutrients = _product_payload(body)
+    try:
+        with store._write_conn() as c:
+            p = products.create(c, data, nutrients or [], body.user)
+            store.audit(c, body.user, "product.create",
+                        {"code": p["code"], "version": p["version"], "name": p["name"]})
+    except products.ProductError as e:
+        raise HTTPException(400, str(e))
+    store.anchor_now()
+    return p
+
+
+@app.post("/api/products/{product_id}/version")
+def product_version(product_id: int, body: ProductBody):
+    """Supersede a specification. The old version stays readable forever."""
+    data, nutrients = _product_payload(body)
+    try:
+        with store._write_conn() as c:
+            p = products.new_version(c, product_id, data, nutrients,
+                                     body.change_reason or "", body.user)
+            store.audit(c, body.user, "product.version",
+                        {"code": p["code"], "version": p["version"],
+                         "reason": body.change_reason})
+    except products.ProductError as e:
+        raise HTTPException(400, str(e))
+    store.anchor_now()
+    return p
+
+
+@app.post("/api/products/{product_id}/edit")
+def product_edit(product_id: int, body: ProductBody):
+    """Non-specification fields only (SKU, barcode, storage note, remarks)."""
+    data, _ = _product_payload(body)
+    try:
+        with store._write_conn() as c:
+            p = products.update_in_place(c, product_id, data, body.user)
+            store.audit(c, body.user, "product.edit", {"code": p["code"]})
+    except products.ProductError as e:
+        raise HTTPException(400, str(e))
+    store.anchor_now()
+    return p
+
+
+class ScanBody(BaseModel):
+    image: str            # base64 (data: URL accepted)
+
+
+@app.get("/api/scan/health")
+def scan_health():
+    """Tells the UI whether to offer the camera OCR button at all."""
+    return label_scan.available()
+
+
+@app.post("/api/scan/label")
+def scan_label(body: ScanBody):
+    """OCR a nutrition label locally -> draft fields for review, never saved."""
+    try:
+        return label_scan.read_label(body.image)
+    except label_scan.ScanError as e:
+        raise HTTPException(422, str(e))
+
+
+@app.get("/api/products/barcode/{barcode}")
+def product_by_barcode(barcode: str):
+    """Resolve a scanned code against OUR OWN catalog.
+
+    Deliberately not a third-party lookup: a manufacturer's product data is not
+    something to send to an external service, and scanning your own product to
+    find or re-version it is the actual use case.
+    """
+    with store._conn() as c:
+        p = products.by_barcode(c, barcode)
+    return {"found": bool(p), "product": p, "barcode": barcode}
+
+
 # ---- meta -------------------------------------------------------------------
 @app.get("/api/roles")
 def roles():
@@ -137,15 +272,45 @@ def seed(reset: bool = True):
     store.init_db(reset=reset)
     ofs = odoo.search_read("mrp.production", [("order_kind", "=", "fabrication")], ["id"])
     ocs = odoo.search_read("mrp.production", [("order_kind", "=", "conditionnement")], ["id"])
-    ids = [store.create_batch_from_odoo(odoo, of["id"], oc["id"], user="system")
-           for of, oc in zip(ofs, ocs)]
+    with store._conn() as c:
+        catalog = {p["sku"]: p["id"] for p in products.listing(c) if p.get("sku")}
+    # Map the demo manufacturing orders onto real catalog products.
+    ids = []
+    for of, oc in zip(ofs, ocs):
+        prod = odoo.read("mrp.production", [of["id"]], ["product_id"])[0]
+        code = odoo.read("product.product", [prod["product_id"][0]], ["default_code"])[0]
+        pid = catalog.get(code.get("default_code"))
+        if pid:
+            ids.append(store.create_batch_for_product(odoo, pid, of["id"], oc["id"], "system"))
+        else:
+            ids.append(store.create_batch_from_odoo(odoo, of["id"], oc["id"], "system"))
     return {"batch_ids": ids, "batch_id": ids[0]}
 
 
 # ---- batches ----------------------------------------------------------------
 @app.get("/api/batches")
-def batches():
-    return store.list_batches()
+def batches(product_code: str | None = None):
+    return store.list_batches(product_code)
+
+
+class NewBatchBody(Actor):
+    product_id: int
+    qty_target: int | None = None
+
+
+@app.post("/api/batches")
+def batch_create(body: NewBatchBody):
+    """Open a Dossier de Lot for a product. The specification drives it."""
+    ofs = odoo.search_read("mrp.production", [("order_kind", "=", "fabrication")], ["id"])
+    ocs = odoo.search_read("mrp.production", [("order_kind", "=", "conditionnement")], ["id"])
+    if not ofs or not ocs:
+        raise HTTPException(400, "aucun ordre de fabrication disponible")
+    try:
+        bid = store.create_batch_for_product(odoo, body.product_id, ofs[0]["id"],
+                                             ocs[0]["id"], body.user, body.qty_target)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"batch_id": bid, "batch": store.get_batch(bid)}
 
 
 @app.get("/api/dossier")
@@ -273,9 +438,18 @@ def form_get(batch_id: int, doc_key: str):
     if not b:
         raise HTTPException(404, "batch not found")
     stage = next((s for s in b["stages"] if s["name"] == form["stage"]), None)
+    # Deep-copy before overlaying: _forms() is a process-wide cache and the
+    # overlay is per batch. Mutating the cache would leak one product's data
+    # into every other batch's dossier.
+    form = copy.deepcopy(form)
+    spec = b.get("product_spec")
+    store.apply_product_to_form(form, spec)
     return {"form": form, "values": store.get_form_values(batch_id, doc_key),
             "locked": bool(stage and stage["status"] == "signed"),
-            "stage": form["stage"]}
+            "stage": form["stage"],
+            "product": None if not spec else {
+                "id": spec["id"], "code": spec["code"], "version": spec["version"],
+                "name": spec["name"], "status": spec["status"]}}
 
 
 @app.post("/api/batch/{batch_id}/form/{doc_key}")

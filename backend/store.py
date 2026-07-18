@@ -19,7 +19,7 @@ import datetime as _dt
 from pathlib import Path
 from typing import Any
 
-from . import auth, anchor
+from . import auth, anchor, products
 
 DB_PATH = Path(__file__).with_name("batchtwin.db")
 
@@ -85,7 +85,8 @@ def _write_conn() -> sqlite3.Connection:
 
 _TABLES = ["audit", "signature", "form_entry", "bom_change", "deviation",
            "packaging_recon", "applied_op", "energy", "qc_sample", "dispense",
-           "checklist", "stage", "batch", "session", "app_user"]
+           "checklist", "stage", "batch", "product_nutrient", "product",
+           "session", "app_user"]
 
 # --- Offline capture -------------------------------------------------------
 # A tablet on a shop floor loses Wi-Fi. Data capture is queued locally and
@@ -125,6 +126,9 @@ def init_db(reset: bool = False) -> None:
             CREATE TABLE IF NOT EXISTS batch (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 lot_name TEXT NOT NULL,
+                -- product_id points at ONE immutable product version, so a lot
+                -- stays readable against the spec it was actually made to.
+                product_id INTEGER REFERENCES product(id),
                 product TEXT NOT NULL,
                 qty_target INTEGER NOT NULL,
                 of_ref TEXT, oc_ref TEXT, sale_order TEXT,
@@ -258,6 +262,8 @@ def init_db(reset: bool = False) -> None:
             """
         )
         auth.init_users(c)
+        products.init(c)
+        products.seed(c)
 
 
 _ANCHOR_LOCK = threading.Lock()
@@ -394,26 +400,72 @@ def build_workflow_summary(batch: dict, stages: list[dict], signatures: list[dic
     }
 
 
-def create_batch_from_odoo(odoo, of_id: int, oc_id: int, user: str) -> int:
+def create_batch_for_product(odoo, product_id: int, of_id: int, oc_id: int,
+                             user: str, qty_target: int | None = None) -> int:
+    """Open a Dossier de Lot against ONE product version.
+
+    Everything the dossier prints about the product -- name, presentation,
+    strength, fill target, shelf life -- comes from the specification rather
+    than from whatever the manufacturing order happened to say.
+    """
+    with _conn() as c:
+        p = products.get(c, product_id)
+    if not p:
+        raise ValueError("produit introuvable")
+    if p["status"] == "superseded":
+        raise ValueError(
+            f"{p['code']} v{p['version']} est superseded -- utilisez la version active")
+    return create_batch_from_odoo(odoo, of_id, oc_id, user, product=p,
+                                  qty_target=qty_target)
+
+
+def create_batch_from_odoo(odoo, of_id: int, oc_id: int, user: str,
+                           product: dict | None = None,
+                           qty_target: int | None = None) -> int:
     of = odoo.read("mrp.production", [of_id],
                    ["name", "product_id", "product_qty", "bom_id", "lot_id",
                     "sale_order", "target_fill_g", "fill_tolerance_g", "fill_unit"])[0]
     oc = odoo.read("mrp.production", [oc_id], ["name", "bom_id"])[0]
-    lot_name = of["lot_id"][1] if of.get("lot_id") else of["name"]
-    product = of["product_id"][1]
     today = _dt.date.today()
-    fg_shelf = 900 if any(x in product for x in ("Spiruline", "Gelules", "Gélules", "capsule")) else 730
+
+    if product:
+        # Product-led: the specification is the source of truth.
+        product_id = product["id"]
+        product_name = products.label(product)
+        lot_name = f"{product['code']}-{today.strftime('%y%m%d')}-001"
+        fill_target = product.get("fill_target")
+        fill_tol = product.get("fill_tolerance")
+        fill_unit = product.get("fill_unit") or "mL"
+        shelf_days = int((product.get("shelf_life_months") or 24) * 30.44)
+        qty = qty_target or of["product_qty"]
+    else:
+        # Legacy path: whatever the manufacturing order carried.
+        product_id = None
+        product_name = of["product_id"][1]
+        lot_name = of["lot_id"][1] if of.get("lot_id") else of["name"]
+        fill_target = of.get("target_fill_g")
+        fill_tol = of.get("fill_tolerance_g")
+        fill_unit = of.get("fill_unit") or "mL"
+        shelf_days = 900 if any(x in product_name for x in
+                                ("Spiruline", "Gelules", "Gélules", "capsule")) else 730
+        qty = qty_target or of["product_qty"]
+
     mfg_date = today.isoformat()
-    expiry_date = (today + _dt.timedelta(days=fg_shelf)).isoformat()
+    expiry_date = (today + _dt.timedelta(days=shelf_days)).isoformat()
 
     with _conn() as c:
+        if product_id:
+            # Lot numbers must be unique per product per day.
+            n = c.execute("SELECT COUNT(*) n FROM batch WHERE lot_name LIKE ?",
+                          (lot_name[:-3] + "%",)).fetchone()["n"]
+            lot_name = f"{lot_name[:-3]}{n + 1:03d}"
         cur = c.execute(
-            "INSERT INTO batch(lot_name, product, qty_target, of_ref, oc_ref,"
+            "INSERT INTO batch(lot_name, product_id, product, qty_target, of_ref, oc_ref,"
             " sale_order, target_fill_g, fill_tol_g, fill_unit, mfg_date, expiry_date, created_at)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-            (lot_name, product, of["product_qty"], of["name"], oc["name"],
-             of.get("sale_order"), of.get("target_fill_g"),
-             of.get("fill_tolerance_g"), of.get("fill_unit") or "mL", mfg_date, expiry_date, _now()),
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (lot_name, product_id, product_name, qty, of["name"], oc["name"],
+             of.get("sale_order"), fill_target, fill_tol, fill_unit,
+             mfg_date, expiry_date, _now()),
         )
         batch_id = cur.lastrowid
         for s in STAGES:
@@ -425,7 +477,9 @@ def create_batch_from_odoo(odoo, of_id: int, oc_id: int, user: str) -> int:
         _seed_dispense(c, odoo, batch_id, oc["bom_id"][0])
         _seed_packaging(c, odoo, batch_id, oc["bom_id"][0], of["product_qty"])
         audit(c, user, "batch.create",
-              {"lot": lot_name, "of": of["name"], "oc": oc["name"]}, batch_id)
+              {"lot": lot_name, "of": of["name"], "oc": oc["name"],
+               "product": f"{product['code']} v{product['version']}" if product else None},
+              batch_id)
     anchor_now()
     return batch_id
 
@@ -988,10 +1042,70 @@ def _rows(c, q, *a):
     return [dict(r) for r in c.execute(q, a).fetchall()]
 
 
-def list_batches() -> list[dict]:
+def list_batches(product_code: str | None = None) -> list[dict]:
+    """All lots, or only those of one product across every one of its versions.
+
+    Filtering by CODE rather than product_id is deliberate: a product's history
+    spans its versions, and an operator looking for "PF201" means all of them.
+    """
+    q = ("SELECT b.id, b.lot_name, b.product, b.product_id, b.qty_target, b.state,"
+         " b.of_ref, b.oc_ref, b.created_at, p.code AS product_code,"
+         " p.version AS product_version FROM batch b"
+         " LEFT JOIN product p ON p.id = b.product_id")
+    args: tuple = ()
+    if product_code:
+        q += " WHERE p.code = ?"
+        args = (product_code,)
+    q += " ORDER BY b.id ASC"
     with _conn() as c:
-        return _rows(c, "SELECT id, lot_name, product, qty_target, state,"
-                        " of_ref, oc_ref, created_at FROM batch ORDER BY id ASC")
+        return _rows(c, q, *args)
+
+
+def _norm_label(s: str) -> str:
+    """Accents and case must not decide whether a field is recognised."""
+    s = (s or "").lower().strip().rstrip(":").strip()
+    for a, b in (("é", "e"), ("è", "e"), ("ê", "e"), ("à", "a"), ("ô", "o"),
+                 ("î", "i"), ("ç", "c"), ("û", "u")):
+        s = s.replace(a, b)
+    return " ".join(s.split())
+
+
+def apply_product_to_form(form: dict, product: dict | None) -> int:
+    """Adapt a dossier template to the selected product.
+
+    Medicka's Word templates are per-product: the identification block has
+    "Probio D3 Green Castel" *printed into it*, which is precisely why a new
+    product means a new document today. Here one template serves every product:
+    wherever a row reads "Nom du produit | <printed value>", the printed value
+    is replaced by the selected specification and marked as coming from it.
+
+    Mutates `form` in place (it is a per-request copy) and returns the count.
+    """
+    if not product:
+        return 0
+    wanted = {_norm_label(k): v for k, v in products.dossier_prefill(product).items() if v}
+    n = 0
+    for section in form["sections"]:
+        for block in section["blocks"]:
+            if block["kind"] != "table":
+                continue
+            for row in block["rows"]:
+                for i, cell in enumerate(row):
+                    if cell["type"] != "label":
+                        continue
+                    val = wanted.get(_norm_label(cell.get("text", "")))
+                    if val is None or i + 1 >= len(row):
+                        continue
+                    target = row[i + 1]
+                    if target["type"] == "label":
+                        # printed value -> replace with the specification
+                        target["text"] = val
+                    else:
+                        target["value"] = val
+                    target["from_spec"] = True
+                    n += 1
+    form["spec_fields"] = n
+    return n
 
 
 def _stages_of(c, batch_id: int) -> list[dict]:
@@ -1057,6 +1171,9 @@ def get_batch(batch_id: int) -> dict | None:
         b["deviations_open"] = sum(1 for x in b["deviations"] if x["status"] == "open")
     b["packaging"] = packaging_balance(batch_id)
     with _conn() as c:
+        # The dossier must show the spec version it was actually made against,
+        # even after that version has been superseded.
+        b["product_spec"] = products.get(c, b["product_id"]) if b.get("product_id") else None
         b["workflow"] = build_workflow_summary(b, b["stages"], b["signatures"], b["qc"])
         return b
 
