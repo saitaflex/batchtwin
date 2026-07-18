@@ -19,7 +19,9 @@ import datetime as _dt
 from pathlib import Path
 from typing import Any
 
-from . import auth, anchor, products
+import os
+
+from . import auth, anchor, products, industry
 
 DB_PATH = Path(__file__).with_name("batchtwin.db")
 
@@ -27,28 +29,42 @@ DB_PATH = Path(__file__).with_name("batchtwin.db")
 # Real Medicka signatory roles (from the actual DFA/DCO/DCT dossiers):
 # R. PROD = Responsable Production, R. CQ = Responsable Controle Qualite,
 # SMQ = Systeme Management Qualite (Assurance Qualite), PRT = Pharmacien Responsable Technique.
-ROLES = {
-    "r_prod": "R. PROD — Responsable Production",
-    "r_cq":   "R. CQ — Responsable Controle Qualite",
-    "smq":    "SMQ — Assurance Qualite",
-    "prt":    "PRT — Pharmacien Responsable Technique",
-}
 
-# Medicka issues FOUR dossiers, and primary/secondary packaging are separate
-# documents with separate signatures -- so they are separate lifecycle stages.
-STAGES = ["fabrication", "cond_primaire", "cond_secondaire", "qualite", "liberation"]
-STAGE_SIGNER = {           # which role is allowed to sign off each dossier section
-    "fabrication":     "r_prod",   # DFA   — Dossier de Fabrication
-    "cond_primaire":   "r_prod",   # DCOI  — Conditionnement Primaire
-    "cond_secondaire": "r_prod",   # DCOII — Conditionnement Secondaire
-    "qualite":         "r_cq",     # DCT   — Dossier de Controle
-    "liberation":      "prt",      # Liberation — Pharmacien Responsable Technique
-}
+
+# --- The lifecycle comes from the active INDUSTRY PROFILE, not from constants.
+# The mechanics (staged record, role-gated signatures, mass balance, deviations)
+# are the product; the vocabulary and the rulebook differ by sector. Adding an
+# industry is writing a profile, not editing this engine.
+PROFILE = industry.load(os.environ.get("BATCHTWIN_PROFILE"))
+STAGES = industry.stage_names(PROFILE)
+STAGE_SIGNER = industry.stage_signer(PROFILE)
+STAGE_DOC = industry.stage_doc(PROFILE)
 # Every stage before release must be signed for a lot to be released.
 PREREQUISITE_STAGES = [s for s in STAGES if s != "liberation"]
-# Which digitalised dossier belongs to which stage.
-STAGE_DOC = {"fabrication": "DFA", "cond_primaire": "DCOI",
-             "cond_secondaire": "DCOII", "qualite": "DCT"}
+
+
+def use_profile(key: str) -> dict:
+    """Switch industry profile at runtime.
+
+    Existing batches keep the stages they were created with -- a profile change
+    must never rewrite a signed record. Only new batches follow the new profile.
+    """
+    global PROFILE, STAGES, STAGE_SIGNER, STAGE_DOC, PREREQUISITE_STAGES
+    global ROLES, QA_ROLES, CHANGE_REQUESTERS, MINOR_TOLERANCE_PCT
+    global DEFAULT_CHECKLIST, QUALIFICATION_LOTS, PACKAGING_VARIANCE_PCT
+    PROFILE = industry.load(key)
+    STAGES = industry.stage_names(PROFILE)
+    STAGE_SIGNER = industry.stage_signer(PROFILE)
+    STAGE_DOC = industry.stage_doc(PROFILE)
+    PREREQUISITE_STAGES = [s for s in STAGES if s != "liberation"]
+    ROLES = dict(PROFILE["roles"])
+    QA_ROLES = set(PROFILE["qa_roles"])
+    CHANGE_REQUESTERS = set(PROFILE.get("change_requesters") or []) | QA_ROLES
+    MINOR_TOLERANCE_PCT = industry.rule(PROFILE, "minor_tolerance_pct", 5.0)
+    PACKAGING_VARIANCE_PCT = industry.rule(PROFILE, "packaging_variance_pct", 1.0)
+    QUALIFICATION_LOTS = industry.rule(PROFILE, "qualification_lots", 3)
+    DEFAULT_CHECKLIST = list(PROFILE["checklist"])
+    return PROFILE
 
 
 def _now() -> str:
@@ -100,9 +116,11 @@ OFFLINE_KINDS = {"form", "dispense", "qc", "checklist", "packaging", "units"}
 # GMP reality: the formula is a registered document. Production may adjust a
 # quantity inside the registered range; anything else is a DEVIATION and needs
 # Quality Assurance. Control (R. CQ) checks the product, it never reformulates it.
-QA_ROLES = {"smq", "prt"}          # may approve a change (and self-approve their own)
-CHANGE_REQUESTERS = {"r_prod"} | QA_ROLES
-MINOR_TOLERANCE_PCT = 5.0          # +/- 5 % on an existing line = in-range adjustment
+ROLES = dict(PROFILE["roles"])
+QA_ROLES = set(PROFILE["qa_roles"])            # may approve a change
+CHANGE_REQUESTERS = set(PROFILE.get("change_requesters") or []) | QA_ROLES
+MINOR_TOLERANCE_PCT = industry.rule(PROFILE, "minor_tolerance_pct", 5.0)
+PACKAGING_VARIANCE_PCT = industry.rule(PROFILE, "packaging_variance_pct", 1.0)
 
 # Instrumented workstations per dossier (rated power kW) — what the IoT clamps meter.
 MACHINES = {
@@ -139,7 +157,11 @@ def init_db(reset: bool = False) -> None:
                 -- legal record and this one shadows it. Nothing digital may
                 -- claim legal release until the product line is cut over.
                 run_mode TEXT NOT NULL DEFAULT 'live', -- parallel | live
-                paper_ref TEXT,                        -- the paper dossier it shadows
+                paper_ref TEXT,
+                -- The rulebook this lot was opened under. Repair and display use
+                -- THIS profile, never the currently-active one: changing the
+                -- industry profile must not rewrite a record already signed.
+                profile_key TEXT,                        -- the paper dossier it shadows
                 created_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS stage (
@@ -355,13 +377,7 @@ def verify_chain() -> dict:
 # ----------------------------------------------------------------------------
 # Dossier de Lot lifecycle
 # ----------------------------------------------------------------------------
-DEFAULT_CHECKLIST = [
-    "Zone de production vide du lot precedent",
-    "Zone et equipements propres (nettoyage valide)",
-    "Machine de remplissage operationnelle",
-    "Cartons de matiere premiere sortis de la zone (securite)",
-    "Documentation du lot presente et conforme",
-]
+DEFAULT_CHECKLIST = list(PROFILE["checklist"])
 
 
 def build_workflow_summary(batch: dict, stages: list[dict], signatures: list[dict], qc_samples: list[dict]) -> dict:
@@ -466,11 +482,11 @@ def create_batch_from_odoo(odoo, of_id: int, oc_id: int, user: str,
             lot_name = f"{lot_name[:-3]}{n + 1:03d}"
         cur = c.execute(
             "INSERT INTO batch(lot_name, product_id, product, qty_target, of_ref, oc_ref,"
-            " sale_order, target_fill_g, fill_tol_g, fill_unit, mfg_date, expiry_date, created_at)"
-            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            " sale_order, target_fill_g, fill_tol_g, fill_unit, mfg_date, expiry_date,"
+            " profile_key, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (lot_name, product_id, product_name, qty, of["name"], oc["name"],
              of.get("sale_order"), fill_target, fill_tol, fill_unit,
-             mfg_date, expiry_date, _now()),
+             mfg_date, expiry_date, PROFILE["key"], _now()),
         )
         batch_id = cur.lastrowid
         for s in STAGES:
@@ -697,7 +713,8 @@ def packaging_balance(batch_id: int) -> dict:
         pct = abs(variance) / issued * 100 if issued else 0.0
         worst = max(worst, pct)
         lines.append({**r, "accounted": accounted, "variance": variance,
-                      "variance_pct": round(pct, 2), "ok": pct <= 1.0})
+                      "variance_pct": round(pct, 2),
+                      "ok": pct <= PACKAGING_VARIANCE_PCT})
     complete = bool(lines) and all(x["ok"] is not None for x in lines)
     return {"lines": lines, "complete": complete,
             "balanced": complete and all(x["ok"] for x in lines),
@@ -1040,7 +1057,7 @@ def _guard_release(c, batch_id, stage):
             untouched.append(r["code"])
             continue
         accounted = (r["used"] or 0) + (r["returned"] or 0) + (r["waste"] or 0)
-        if r["issued"] and abs(r["issued"] - accounted) / r["issued"] * 100 > 1.0:
+        if r["issued"] and abs(r["issued"] - accounted) / r["issued"] * 100 > PACKAGING_VARIANCE_PCT:
             unbalanced.append(r["code"])
     if untouched:
         raise PermissionError(
@@ -1094,7 +1111,7 @@ def list_batches(product_code: str | None = None) -> list[dict]:
 # on a slide.
 RUN_MODES = {"parallel": "Double saisie — le dossier papier fait foi",
              "live": "Dossier electronique — enregistrement legal"}
-QUALIFICATION_LOTS = 3          # clean lots required before a line may cut over
+QUALIFICATION_LOTS = industry.rule(PROFILE, "qualification_lots", 3)
 
 
 def set_run_mode(batch_id: int, mode: str, user: str, role: str,
@@ -1213,32 +1230,44 @@ def apply_product_to_form(form: dict, product: dict | None) -> int:
     return n
 
 
-def _stages_of(c, batch_id: int) -> list[dict]:
+def _batch_stage_names(profile_key: str | None) -> list[str]:
+    """The stage list of the rulebook a given batch was opened under."""
+    if not profile_key or profile_key == PROFILE["key"]:
+        return STAGES
+    try:
+        return industry.stage_names(industry.load(profile_key))
+    except industry.ProfileError:
+        return STAGES
+
+
+def _stages_of(c, batch_id: int, order_names: list[str] | None = None) -> list[dict]:
     """Stages in lifecycle order, not insertion order.
 
     A repaired batch has its added rows at the end of the table, so ordering by
     id would present Liberation before Conditionnement.
     """
-    order = {name: i for i, name in enumerate(STAGES)}
+    order = {name: i for i, name in enumerate(order_names or STAGES)}
     rows = _rows(c, "SELECT name, status FROM stage WHERE batch_id=?", batch_id)
     return sorted(rows, key=lambda r: order.get(r["name"], 99))
 
 
-def _ensure_stages(batch_id: int, have: set[str]) -> None:
+def _ensure_stages(batch_id: int, have: set[str],
+                   want: list[str] | None = None) -> None:
     """Create any lifecycle stage this batch is missing, in canonical order.
 
     Signed stages are never touched: this only ever adds rows.
     """
+    want = want or STAGES
     with _write_conn() as c:
-        for name in STAGES:
+        for name in want:
             if name not in have:
                 c.execute("INSERT INTO stage(batch_id, name) VALUES(?,?)"
                           " ON CONFLICT(batch_id, name) DO NOTHING", (batch_id, name))
         c.execute("DELETE FROM stage WHERE batch_id=? AND name NOT IN "
-                  "(" + ",".join("?" * len(STAGES)) + ") AND status<>'signed'",
-                  (batch_id, *STAGES))
+                  "(" + ",".join("?" * len(want)) + ") AND status<>'signed'",
+                  (batch_id, *want))
         audit(c, "system", "stage.repair",
-              {"added": sorted(set(STAGES) - have)}, batch_id)
+              {"added": sorted(set(want) - have)}, batch_id)
 
 
 def get_batch(batch_id: int) -> dict | None:
@@ -1247,17 +1276,28 @@ def get_batch(batch_id: int) -> dict | None:
         if not r:
             return None
         b = dict(r)
-        b["stages"] = _stages_of(c, batch_id)
+        # Order by the rulebook THIS lot was opened under, not the active one:
+        # after a profile switch, ordering by the new lifecycle would push an
+        # unknown stage to the end and misrepresent a signed record.
+        own = _batch_stage_names(b.get("profile_key"))
+        b["stages"] = _stages_of(c, batch_id, own)
 
     # Self-heal a batch whose stage rows are missing or predate the DCOI/DCOII
     # split. Without this the UI reads `undefined.status` and dies on a cryptic
     # error instead of showing a dossier -- and every batch created before the
     # split would be permanently unopenable.
+    # Repair only against the rulebook this lot was opened under. A batch whose
+    # stages merely differ from the CURRENT profile is not corrupt -- it belongs
+    # to another lifecycle, and rewriting it would falsify a signed record.
     have = {s["name"] for s in b["stages"]}
-    if have != set(STAGES):
-        _ensure_stages(batch_id, have)
+    # Repair against the lot's OWN lifecycle -- which is the whole point of
+    # storing profile_key. Anything that differs from it is genuinely wrong
+    # (missing rows, or names from before the DCOI/DCOII split), while a lot
+    # belonging to another profile resolves `own` to that profile and matches.
+    if have != set(own):
+        _ensure_stages(batch_id, have, own)
         with _conn() as c:
-            b["stages"] = _stages_of(c, batch_id)
+            b["stages"] = _stages_of(c, batch_id, own)
 
     with _conn() as c:
         b["checklist"] = _rows(c, "SELECT id, label, ok, note, escalated_to"

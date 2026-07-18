@@ -481,3 +481,5 @@ Motion graphics dark background three columns Paper MES Enterprise Odoo-only the
 8. If shortening to **60s**: keep Shots 01, 03, 05, 06, 07, 09, 12 only.
 9. If lengthening to **3 min**: insert full live demo between Shot 05 and Shot 09 using README demo script order (login → Documents → weighing → SPC → sign → blocked release → close deviation → PDF → integrity).
 10. Assets: `logo/batchtwin.png`, `logo/vera.png`, app at `http://127.0.0.1:8000`.
+
+**Spoken pitch:** see `docs/BatchTwin_4min_Pitch.md`.

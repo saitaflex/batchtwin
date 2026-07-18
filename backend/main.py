@@ -7,16 +7,20 @@ Then open http://localhost:8000
 from __future__ import annotations
 import copy
 import random
+import time
+import uuid
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse, Response,
+                               StreamingResponse)
 from pydantic import BaseModel
 
 from typing import Any
 
 from . import (store, analytics, report, assistant, inventory, equipment,
-               docx_parser, docx_forms, auth, anchor, products, label_scan)
+               docx_parser, docx_forms, auth, anchor, products, label_scan,
+               industry, observability, resilience)
 from .odoo_adapter import MockOdoo
 
 odoo = MockOdoo()
@@ -27,9 +31,58 @@ LOGO_DIR = ROOT / "logo"
 DOSSIER_DIR = ROOT / "dossier"
 
 
+observability.setup()
+_log = observability.log
+
+
+@app.middleware("http")
+async def _observe(request: Request, call_next):
+    """Correlate, rate-limit, time and log every request; add security headers."""
+    rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+    observability.REQUEST_ID.set(rid)
+    observability.CURRENT_USER.set("-")
+    path, method = request.url.path, request.method
+
+    if path.startswith("/api/"):
+        bucket = observability.bucket_for(path, method)
+        limit, window = observability.LIMITS[bucket]
+        client = request.client.host if request.client else "unknown"
+        ok, retry = observability.limiter.check(client, bucket, limit, window)
+        if not ok:
+            observability.event("http.rate_limited", path=path, bucket=bucket, client=client)
+            return JSONResponse(
+                {"detail": f"trop de requetes, reessayez dans {retry}s"},
+                status_code=429,
+                headers={"Retry-After": str(retry), "X-Request-Id": rid})
+
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        # A stack trace on stdout is not an incident report. Log it structured,
+        # correlated, and return something the operator can quote back to us.
+        _log.exception("http.error", extra={"extra_fields": {
+            "event": "http.error", "path": path, "method": method}})
+        return JSONResponse(
+            {"detail": "erreur interne", "request_id": rid},
+            status_code=500, headers={"X-Request-Id": rid})
+
+    ms = round((time.perf_counter() - started) * 1000, 1)
+    if path.startswith("/api/"):
+        observability.CURRENT_USER.set(getattr(request.state, "user", "-"))
+        observability.event("http.request", path=path, method=method,
+                            status=response.status_code, ms=ms)
+    response.headers["X-Request-Id"] = rid
+    for k, v in observability.SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    return response
+
+
 @app.on_event("startup")
 def _startup():
     store.init_db()
+    observability.event("app.start", profile=store.PROFILE["key"],
+                        stages=len(store.STAGES))
 
 
 # ---- request bodies ---------------------------------------------------------
@@ -111,6 +164,8 @@ def current_user(request: Request) -> dict:
             u = auth.resolve_session(c, _bearer(request))
         except auth.AuthError as e:
             raise HTTPException(401, str(e))
+        observability.CURRENT_USER.set(u["username"])
+        request.state.user = u["username"]     # survives back into the middleware
         return {"username": u["username"], "full_name": u["full_name"], "role": u["role"]}
 
 
@@ -297,10 +352,65 @@ def product_by_barcode(barcode: str, me: dict = Me):
     return {"found": bool(p), "product": p, "barcode": barcode}
 
 
+# ---- resilience: what happens when the hardware fails ----------------------
+@app.get("/api/resilience")
+def resilience_modes(me: dict = Me):
+    """The failure-mode table. An auditor can read exactly what degrades how."""
+    return resilience.summary()
+
+
+@app.get("/api/batch/{batch_id}/provenance")
+def batch_provenance(batch_id: int, me: dict = Me):
+    """How much of this lot was metered automatically vs typed by hand.
+
+    QA needs this at release: a fully hand-entered lot is not the same evidence
+    as one metered end to end, even when both are complete.
+    """
+    b = store.get_batch(batch_id)
+    if not b:
+        raise HTTPException(404, "lot introuvable")
+    prov = resilience.batch_data_provenance(b)
+    last = max((r["at"] for r in (b.get("energy") or [])), default=None)
+    prov["telemetry"] = resilience.reading_health(last)
+    prov["manual_entry_required"] = resilience.manual_entry_required(prov["telemetry"])
+    return prov
+
+
+# ---- industry profile -------------------------------------------------------
+class ProfileBody(Actor):
+    key: str
+
+
+@app.get("/api/industry")
+def industry_get(me: dict = Me):
+    """Which rulebook is active, and what else is available."""
+    return {"active": store.PROFILE, "available": industry.available()}
+
+
+@app.post("/api/industry")
+def industry_set(body: ProfileBody, me: dict = Depends(require_roles("smq", "prt"))):
+    """Switch the rulebook. QA only: it changes what the record legally means.
+
+    Existing batches keep the stages they were created with -- a profile change
+    must never rewrite a signed record.
+    """
+    try:
+        p = store.use_profile(body.key)
+    except industry.ProfileError as e:
+        raise HTTPException(400, str(e))
+    with store._write_conn() as c:
+        store.audit(c, me["username"], "industry.profile", {"key": p["key"], "label": p["label"]})
+    store.anchor_now()
+    return {"active": p}
+
+
 # ---- meta -------------------------------------------------------------------
 @app.get("/api/roles")
 def roles(me: dict = Me):
-    return {"roles": store.ROLES, "stages": store.STAGES, "stage_signer": store.STAGE_SIGNER}
+    return {"roles": store.ROLES, "stages": store.STAGES,
+            "stage_signer": store.STAGE_SIGNER,
+            "profile": {k: store.PROFILE[k] for k in ("key", "label", "regulation")},
+            "terminology": store.PROFILE.get("terminology", {})}
 
 
 @app.post("/api/seed")
