@@ -3,33 +3,51 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#2a78d6" />
+<meta name="theme-color" content="#05070B" />
 <link rel="manifest" href="/manifest.webmanifest" />
 <title>BatchTwin · Projections IA</title>
 <style>
-  :root{
+  /* Same tokens as /app -- one product, one visual system. */
+  :root,:root[data-theme="dark"]{
+    color-scheme:dark;
+    --plane:#05070B; --surface:#0c1422; --surface-2:#121c30;
+    --ink:#ffffff; --ink-2:#A5B4C3; --muted:#71809a; --border:rgba(255,255,255,.09);
+    --series:#7c73ff; --teal:#38BDF8; --violet:#a855f7;
+    --good:#34d399; --warning:#fbbf24; --critical:#f87171;
+    --grid:rgba(255,255,255,.07);
+    --fill:rgba(255,255,255,.05); --fill-2:rgba(255,255,255,.09);
+    --hi:#ffffff; --cardbg:rgba(255,255,255,.045);
+    --shadow:0 20px 50px rgba(0,0,0,.42);
+    --glowA:rgba(108,99,255,.16); --glowB:rgba(56,189,248,.10);
+  }
+  :root[data-theme="light"]{
     color-scheme:light;
-    --plane:#f7f8fa; --surface:#ffffff; --surface-2:#f0f2f5;
-    --ink:#10131a; --ink-2:#525a68; --muted:#8b93a1; --border:rgba(16,19,26,.10);
-    --series:#2a78d6; --teal:#1baf7a; --violet:#4a3aa7;
-    --good:#0ca30c; --warning:#eda100; --critical:#d03b3b;
-    --grid:#e6e8ec;
+    --plane:#f6f7fb; --surface:#ffffff; --surface-2:#eef1f7;
+    --ink:#0b1220; --ink-2:#475569; --muted:#7c8798; --border:rgba(15,23,42,.12);
+    --series:#5b53e8; --teal:#0284c7; --violet:#7c3aed;
+    --good:#0f9d58; --warning:#b45309; --critical:#dc2626;
+    --grid:rgba(15,23,42,.08);
+    --fill:rgba(15,23,42,.045); --fill-2:rgba(15,23,42,.085);
+    --hi:#0b1220; --cardbg:#ffffff;
+    --shadow:0 12px 32px rgba(15,23,42,.09);
+    --glowA:rgba(108,99,255,.10); --glowB:rgba(56,189,248,.09);
   }
-  @media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){
-    color-scheme:dark;
-    --plane:#0c0e12; --surface:#161922; --surface-2:#1e222c;
-    --ink:#f2f4f8; --ink-2:#b6bdca; --muted:#78808e; --border:rgba(255,255,255,.10);
-    --series:#3987e5; --teal:#199e70; --violet:#9085e9; --grid:#262b36;
-  }}
-  :root[data-theme="dark"]{
-    color-scheme:dark;
-    --plane:#0c0e12; --surface:#161922; --surface-2:#1e222c;
-    --ink:#f2f4f8; --ink-2:#b6bdca; --muted:#78808e; --border:rgba(255,255,255,.10);
-    --series:#3987e5; --teal:#199e70; --violet:#9085e9; --grid:#262b36;
-  }
+  @font-face{font-family:Inter;font-weight:100 900;font-style:normal;font-display:swap;
+    src:url(/vendor/inter-latin.woff2) format('woff2');
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD;}
+  @font-face{font-family:Inter;font-weight:100 900;font-style:normal;font-display:swap;
+    src:url(/vendor/inter-latinext.woff2) format('woff2');
+    unicode-range:U+0100-02BA,U+1E00-1EFF,U+2C60-2C7F,U+A720-A7FF;}
+  @font-face{font-family:"Noto Arabic";font-weight:100 900;font-style:normal;font-display:swap;
+    src:url(/vendor/noto-arabic.woff2) format('woff2');
+    unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFF;}
   *{box-sizing:border-box}
   body{margin:0;background:var(--plane);color:var(--ink);
-    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
+    font-family:Inter,"Noto Arabic",system-ui,-apple-system,"Segoe UI",sans-serif;
+    line-height:1.5;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(900px 520px at 85% -12%,var(--glowA),transparent 60%),
+      radial-gradient(760px 460px at -8% 6%,var(--glowB),transparent 55%),var(--plane);
+    background-attachment:fixed}
   .wrap{max-width:1120px;margin:0 auto;padding:22px 20px 70px}
   header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
     padding-bottom:18px;border-bottom:1px solid var(--border);margin-bottom:8px}
@@ -73,6 +91,12 @@
 <script src="/vendor/prop-types.js"></script>
 <script src="/vendor/recharts.js"></script>
 <script src="/vendor/babel.js"></script>
+<script>
+/* Theme is shared across every page through localStorage, so a choice made on
+   the dashboard follows the operator here. */
+(function(){document.documentElement.setAttribute("data-theme",
+  localStorage.getItem("bt_theme") || "dark");})();
+</script>
 <script src="/session.js"></script>
 <script src="/i18n.js"></script>
 <script type="text/babel" data-presets="react">
@@ -96,7 +120,9 @@ function useTheme() {
     const mq = matchMedia("(prefers-color-scheme: dark)");
     const on = () => setT(get()); mq.addEventListener("change", on); return () => mq.removeEventListener("change", on);
   }, []);
-  const toggle = () => { const nx = t === "dark" ? "light" : "dark"; document.documentElement.setAttribute("data-theme", nx); setT(nx); };
+  const toggle = () => { const nx = t === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", nx);
+    localStorage.setItem("bt_theme", nx); setT(nx); };
   return [t, toggle];
 }
 const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();

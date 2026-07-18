@@ -3,25 +3,45 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#0f0f0f" />
+<meta name="theme-color" content="#05070B" />
 <link rel="manifest" href="/manifest.webmanifest" />
 <title>VÉRA · Command Center</title>
 <style>
-  @font-face{font-family:Outfit;font-style:normal;font-weight:100 900;font-display:swap;
-    src:url(/vendor/outfit-latin.woff2) format('woff2');
-    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;}
-  @font-face{font-family:Outfit;font-style:normal;font-weight:100 900;font-display:swap;
-    src:url(/vendor/outfit-latinext.woff2) format('woff2');
-    unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;}
-  :root{
+  /* VERA keeps its own token NAMES -- its layout work is built on them -- but
+     they now resolve to /app's palette, so the product reads as one system. */
+  :root,:root[data-theme="dark"]{
     color-scheme:dark;
-    --bg:#0f0f0f; --panel:#18191f; --panel2:#151528; --raise:#20222c; --chip:#1e1f27;
-    --ink:#ffffff; --ink2:#c9ccd6; --mut:#8a8f9c; --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
-    --red:#ff4b1e; --gold:#ffbd12; --mint:#56cca9; --blue:#5b8cff; --violet:#8f7bff;
-    --sans:Outfit,"Outfit Fallback",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --bg:#05070B; --panel:rgba(255,255,255,.045); --panel2:#121c30;
+    --raise:rgba(255,255,255,.09); --chip:rgba(255,255,255,.05);
+    --ink:#ffffff; --ink2:#A5B4C3; --mut:#71809a;
+    --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.18);
+    --red:#f87171; --gold:#fbbf24; --mint:#34d399; --blue:#38BDF8; --violet:#7c73ff;
+    --shadow:0 20px 50px rgba(0,0,0,.42);
+    --glowA:rgba(108,99,255,.16); --glowB:rgba(56,189,248,.10);
+    --sans:Inter,"Noto Arabic",system-ui,-apple-system,"Segoe UI",sans-serif;
     --mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
     --r:18px;
   }
+  :root[data-theme="light"]{
+    color-scheme:light;
+    --bg:#f6f7fb; --panel:#ffffff; --panel2:#eef1f7;
+    --raise:rgba(15,23,42,.085); --chip:rgba(15,23,42,.045);
+    --ink:#0b1220; --ink2:#475569; --mut:#7c8798;
+    --line:rgba(15,23,42,.12); --line2:rgba(15,23,42,.2);
+    --red:#dc2626; --gold:#b45309; --mint:#0f9d58; --blue:#0284c7; --violet:#5b53e8;
+    --shadow:0 12px 32px rgba(15,23,42,.09);
+    --glowA:rgba(108,99,255,.10); --glowB:rgba(56,189,248,.09);
+  }
+
+  @font-face{font-family:Inter;font-weight:100 900;font-style:normal;font-display:swap;
+    src:url(/vendor/inter-latin.woff2) format('woff2');
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD;}
+  @font-face{font-family:Inter;font-weight:100 900;font-style:normal;font-display:swap;
+    src:url(/vendor/inter-latinext.woff2) format('woff2');
+    unicode-range:U+0100-02BA,U+1E00-1EFF,U+2C60-2C7F,U+A720-A7FF;}
+  @font-face{font-family:"Noto Arabic";font-weight:100 900;font-style:normal;font-display:swap;
+    src:url(/vendor/noto-arabic.woff2) format('woff2');
+    unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFF;}
   *{box-sizing:border-box}
   body{margin:0;font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased;min-height:100vh;
     background:
@@ -136,6 +156,12 @@
 <script src="/vendor/prop-types.js"></script>
 <script src="/vendor/recharts.js"></script>
 <script src="/vendor/babel.js"></script>
+<script>
+/* Theme is shared across every page through localStorage, so a choice made on
+   the dashboard follows the operator here. */
+(function(){document.documentElement.setAttribute("data-theme",
+  localStorage.getItem("bt_theme") || "dark");})();
+</script>
 <script src="/session.js"></script>
 <script src="/i18n.js"></script>
 <script type="text/babel" data-presets="react">
@@ -144,6 +170,12 @@ const R = Recharts;
 const { ResponsiveContainer, ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea } = R;
 const C = { mint:"#56cca9", red:"#ff4b1e", gold:"#ffbd12", blue:"#5b8cff", violet:"#8f7bff", ink2:"#c9ccd6", mut:"#8a8f9c", line:"rgba(255,255,255,.10)", panel:"#18191f" };
 /* shared authenticated client -- see frontend/session.js */
+function toggleTheme() {
+  const r = document.documentElement;
+  const next = r.getAttribute("data-theme") === "light" ? "dark" : "light";
+  r.setAttribute("data-theme", next);
+  localStorage.setItem("bt_theme", next);
+}
 const api = (u, b) => bt.api(u, b);
 const T = (k) => (window.t ? window.t(k) : k);
 const TF = (k, v) => (window.tf ? window.tf(k, v) : k);
@@ -267,6 +299,7 @@ function App() {
       </div>
       <div className="hbtns">
         <div className="langsw"><button data-lang="en">EN</button><button data-lang="fr">FR</button><button data-lang="ar">ع</button></div>
+        <button onClick={toggleTheme} title="Thème">◐</button>
         <a href="/app">← {T("vera_home")}</a><a href="/floor">📱 {T("vera_floor")}</a>
       </div>
     </header>
