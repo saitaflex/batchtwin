@@ -116,7 +116,8 @@ a comforting 100 %.
 
 **VÉRA** — raw-material forecasting: seasonal-trend decomposition, FEFO with
 shelf-life projection, reorder point with safety stock (z = 1.65), expiry
-write-off optimisation.
+write-off optimisation. Its figures are computed on a deterministic seed —
+reproducible, but synthetic until real stock data replaces it.
 
 ## 6. Beyond pharma — configurable industry profiles
 

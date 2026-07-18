@@ -25,7 +25,7 @@ Our design partner, **Medicka Laboratories** (Nabeul, Tunisia — GMP-certified 
 - **Perishability is unmodelled.** Vitamins, plant extracts and flavours degrade. Classic min/max reordering has no concept of shelf life, so it happily lets you over-order something that then expires.
 - **Long, variable import lead times.** Active ingredients ship from Europe/Asia with **45–50 day** lead times — if a stockout is spotted late, it cannot be fixed in time.
 
-Concrete, from the live model: **Poudre de spiruline** has only **38 days of cover** against a **50-day** supplier lead time — it *will* run out before any new order can arrive. Meanwhile **138 kg of orange flavour (€3,040)** sits over-stocked and will **expire in 57 days**, entirely invisible in the ERP. Neither is on anyone's radar today.
+Concrete, from the live model: **Poudre de spiruline** has only **38 days of cover** against a **50-day** supplier lead time — it *will* run out before any new order can arrive. Meanwhile **138 kg of orange flavour (€3,035)** sits over-stocked and will **expire in 57 days**, entirely invisible in the ERP. Neither is on anyone's radar today.
 
 ## 2. Our solution
 
@@ -55,14 +55,14 @@ Concrete, from the live model: **Poudre de spiruline** has only **38 days of cov
 
 | Lever | Without VÉRA | With VÉRA | Result |
 |---|---|---|---|
-| ERP requirement bias | theoretical BOM, −1.03% | corrected (+ losses) | under-ordering removed (~€573/yr) |
+| ERP requirement bias | theoretical BOM, −1.03 % | corrected (+ losses) | under-ordering removed (~€571/yr) |
 | Urgent stockout | found too late | flagged 40 days out (lead 50 d) | line-stop averted (expedite in time) |
-| Expiry write-off | invisible | €3,040 surfaced (flavour) | avoidable dead loss caught |
+| Expiry write-off | invisible | €3,035 surfaced (flavour) | avoidable dead loss caught |
 | Reorder decisions | manual spreadsheet review | auto-ranked queue, 19 materials | hours/week of planning saved |
 | Forecast error | naïve / manual | seasonal + Ramadan decomposition | −20–50% (benchmark) |
 | Tied-up inventory | static min/max | cover + expiry optimised | −10–30% (benchmark) |
 
-**Headline:** on this dataset VÉRA catches **1 urgent stockout 40 days early**, surfaces **€3,040** of avoidable expiry, removes a **€573/yr** silent under-ordering bias, and replaces manual reorder review with an **auto-ranked plan across 19 materials** — on **€13,861** of managed stock (of which **€3,464** is dormant).
+**Headline:** on this dataset VÉRA catches **1 urgent stockout 40 days early**, surfaces **€3,035** of avoidable expiry, removes a **€571/yr** silent under-ordering bias, and replaces manual reorder review with an **auto-ranked plan across 19 materials** — on **€13,829** of managed stock (of which **€3,457** is dormant).
 
 _Assumptions: demonstration dataset built from Medicka's real BOMs plus realistic demand, lead times and loss rates; € figures are illustrative pending calibration on the client's books. Benchmarks are external and cited above._
 

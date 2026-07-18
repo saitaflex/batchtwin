@@ -66,7 +66,7 @@ Estimated impact for a typical SME line (~10 batches/week — assumptions below)
 | Operator documentation | ~45 min / batch | ~15 min / batch | −~5 h / week |
 | Documentation-error rework | frequent, manual | forced fields + e-sign | ~90% fewer |
 | Batch release lead time | days | hours | faster cash + capacity |
-| Material loss at dispensing | invisible | measured & reduced | 0.5–1% of material (≈€20–45k/yr) |
+| Material loss at dispensing | invisible | measured | *(euro value unknown until measured — Odoo cannot produce it)* |
 | Fill give-away | ~1–2% overfill | tightened via SPC | ~1% fill material saved |
 | Energy per batch | unknown | metered & targeted | 10–15% reduction opportunity |
 

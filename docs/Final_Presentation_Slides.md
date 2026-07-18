@@ -156,31 +156,44 @@ Odoo (MO/BOM) → Production → Pack I → Pack II → Quality → Release
 
 ## SLIDE 9 — Financial Forecasts & Key Figures
 
-> **Data Room:** missing — no 5-year revenue / IRR in the repo. The figures below
-> come from `docs/BUSINESS_MODEL.md`, which computes them from the repository's
-> own BOM rather than estimating. Do not quote a number that is not in that file.
+> **Data Room:** does not exist. No 5-year revenue, no IRR, no signed customers.
+> Every number on this slide is computed by the code; where a figure would have
+> to be invented there is none.
 
-### Operational impact (240 lots / year — 5 lines × ~4 lots / month)
+### What we can prove today
 
-| Lever | Basis | Annual |
-|---|---|---|
-| QA review 3 h → 1.5 h / lot | published 40–60 % reduction, taken at the **low** end | **€6,480** |
-| Material loss made visible | 0.4 % of €400/lot material spend | **€384** |
-| Expiry write-off avoided | 30 % of VÉRA's €3,035 exposure | **€911** |
-| Deviations avoided | 2 / yr × €1,200 | **€2,400** |
-| **Total** | | **≈ €10,200 / yr** |
+| Measured by the code, on Medicka's own dossiers | |
+|---|---|
+| Dossier fields digitalised | **1,205** |
+| Conformity checks made tappable | **135** |
+| Blank pre-printed paper lines eliminated | **570** |
+| Word templates replaced by one adaptive form | **4 → 1** |
 
-**Say this plainly:** against a €14,400 subscription, **efficiency alone does not
-pay it back at this volume** — it turns positive near 400 lots/year. The purchase
-is justified by risk, not efficiency: a regulatory finding on batch records, a
-recall from undetected drift, or a failed customer audit each cost more than a
-decade of subscription. That is exactly why the buyer is the person who signs
-release.
+### What we deliberately do not claim
 
-> An earlier version of this slide claimed €20–45k/year from material loss alone.
-> That was ~22× the repository's own numbers (520 lots × €400 = €208k of material
-> spend; 1 % of it is €2,080, not €45k) and it contradicted BUSINESS_MODEL.md.
-> Corrected — an investor who checks the arithmetic will check this one.
+**We have no ROI figure, and that is on purpose.** Computing one needs four
+numbers only Medicka has: lots per year, hours QA spends reviewing a paper
+record, the reviewer's loaded cost, and material cost per lot. We have asked for
+them. The formula is in `docs/BUSINESS_MODEL.md §3.4` and the arithmetic takes
+a minute once they arrive.
+
+**One input does not exist anywhere yet: real material loss.** Odoo cannot
+produce it — it knows the theoretical recipe and nothing about what was actually
+weighed. One month of parallel running creates that number for the first time,
+and it is worth more to this business case than any projection we could put on
+this slide.
+
+### Why they buy it anyway
+
+Efficiency is unlikely to justify the subscription at low volume — benefit
+scales with lots, the subscription does not. The purchase is justified by risk:
+
+- a **regulatory finding** on batch records is existential for a GMP site
+- a **recall** from an undetected fill drift
+- a **failed customer audit**
+
+Each costs more than years of subscription. That is why the buyer is the person
+who personally signs release, and why we lead with traceability, not time saved.
 
 ### To complete (Data Room)
 

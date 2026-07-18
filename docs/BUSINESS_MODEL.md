@@ -1,8 +1,10 @@
 # BatchTwin — business model
 
-> Every figure below is either **anchored** to a public reference or marked
-> **[assumption]**. Assumptions are ours to defend and yours to validate before
-> quoting a customer. Nothing here is presented as a measured result.
+> **Every number in this document is either computed by the code in this
+> repository or cited from a public source.** Where a figure would have to be
+> invented — pricing, ROI, revenue — there is a blank and the formula that fills
+> it, not a guess. A confident number with no origin is the fastest way to lose
+> a jury that checks arithmetic.
 
 ---
 
@@ -134,143 +136,121 @@ Not our numbers — published, and cited as such:
 
 Use these to frame the *category*, never as BatchTwin's measured results.
 
-### 3.4 ROI model for a site like Medicka
+### 3.4 ROI worksheet — fill this in with Medicka, do not guess it
 
-🔶 Every input is an assumption until Medicka confirms it. Shown as arithmetic
-you can rerun with their real numbers, not as a conclusion.
+There is no ROI figure in this document, because computing one requires four
+numbers only the customer has. Inventing them would produce a confident total
+that collapses the moment anyone asks where it came from.
 
-**Inputs** — 5 product lines, ~4 lots/line/month = **240 lots/year**; QA reviewer
-loaded cost €18/h; material cost €400/lot 📐 (from the demo BOM).
+Ask for these four, then the arithmetic is trivial:
 
-| Effect | Basis | Annual |
+| Input | Ask | Value |
 |---|---|---|
-| QA review time: 3 h → 1.5 h per lot | 📊 40–60 % reduction, taken at the **low** end | 240 × 1.5 h × €18 = **€6,480** |
-| Material loss made visible | 🔶 0.4 % of material spend, now measured and actionable | 240 × €400 × 0.4 % = **€384** |
-| Expiry write-off avoided | 🔶 30 % of VÉRA's €3,035 exposure | **€911** |
-| Deviation cost avoided | 🔶 2 fewer/yr × €1,200 | **€2,400** |
-| Faster release → working capital | 🔶 excluded — real but site-specific | — |
-| **Total** | | **≈ €10,200/yr** |
+| **L** | Lots produced per year | `____` |
+| **H** | Hours QA spends reviewing one paper batch record | `____` |
+| **C** | Loaded hourly cost of a QA reviewer | `____ €/h` |
+| **M** | Material cost of an average lot | `____ €` |
 
-Against **€14,400** Standard subscription plus **€9,000** one-off implementation:
+Then:
 
-- Year 1: −€13,200 🔶
-- Year 2 onward: −€4,200/yr 🔶
-- **Payback: does not occur on efficiency alone.**
+```
+QA review saved       = L × H × 0.40 × C     ← 0.40 is the LOW end of the
+                                                published 40-60 % reduction
+Material loss exposed = L × M × loss%        ← loss% is unknown until BatchTwin
+                                                measures it; that is the point
+Annual benefit        = QA review saved + material loss + deviations avoided
+Payback               = (subscription + implementation) ÷ annual benefit
+```
 
-### 3.5 The honest conclusion
+**The one input nobody can supply yet is `loss%`.** Odoo cannot produce it —
+it knows the theoretical BOM and nothing about what was actually weighed. One
+month of parallel-run data produces it for the first time, and that single
+number is worth more to this business case than any projection in this document.
 
-**Efficiency does not pay for this product at Medicka's scale, and pretending
-otherwise would be dismantled by any investor who checks the arithmetic.**
+### 3.5 What the arithmetic will probably say, and why that is fine
 
-What justifies the spend is risk:
+Run the formula with any plausible inputs for a site of Medicka's size and QA
+review time dominates every other term; material loss and expiry are rounding
+errors beside it. That has two consequences worth saying out loud before a jury
+does:
 
-- **A regulatory finding on batch records** is existential for a GMP site — lost
-  certification, halted export, remediation costs far beyond the subscription.
-  BatchTwin's answer is the hash chain with external anchoring, Part 11
-  signatures, and a release gate that cannot be bypassed.
-- **A recall from an undetected fill drift.** The SPC forecast warns before the
-  specification is breached. One avoided recall exceeds a decade of subscription.
-- **Losing a customer audit.** Producing a complete, signed, timestamped dossier
-  in one click versus hunting four paper documents.
+**Efficiency alone is unlikely to justify the subscription at low volume.**
+Benefit scales linearly with lots; the subscription does not. Below a few
+hundred lots a year the sums are marginal, and the honest recommendation is the
+smallest plan.
+
+**The purchase is justified by risk, not efficiency.** A regulatory finding on
+batch records is existential for a GMP site — lost certification, halted export,
+remediation far beyond any subscription. A recall from an undetected fill drift
+is the same. A failed customer audit costs the account. BatchTwin's answer to
+each is concrete: the hash chain with external anchoring, Part 11 signatures, a
+release gate that cannot be bypassed, and an SPC forecast that warns before the
+specification is breached.
 
 This is insurance pricing, not efficiency pricing — which is exactly why the
-buyer is the person who signs release.
-
-ROI improves sharply with scale, because QA review time is the dominant term and
-it scales linearly with lots while the subscription does not:
-
-| Lots/year | Annual benefit 🔶 | vs €14,400 subscription |
-|---|---|---|
-| 240 (Medicka today) | €10,200 | −€4,200 |
-| **~400** | **€14,750** | **break-even** |
-| 600 | €20,500 | +€6,100 |
-| 700 | €23,300 | +€8,900 |
-
-So the growth path is **larger sites, not more features** — and at Medicka's
-current volume the Essential plan (€7,200) is the honest recommendation, with
-Standard justified once they pass ~200 lots/year or want VÉRA.
-
-**Say this to the jury.** "Efficiency alone doesn't pay it back at this volume;
-here's the arithmetic, and here's why they buy it anyway" is a stronger answer
-than a fabricated payback period.
+buyer is the person who personally signs release, and why the pitch leads with
+traceability.
 
 ---
 
 ## 4. Pricing
 
-### Anchors
+**This document does not state a price, because no price has been tested.**
+What follows is the reasoning that produces one, so the number you eventually
+quote can be defended.
 
-- Enterprise eBR: MasterControl from **$1,000/month per feature**, extra per site
-  ([Capterra](https://www.capterra.com/p/148011/MasterControl/)).
-- Odoo Enterprise itself: **$8.95–$76.20/user/month** depending on country, with
-  the Middle East at the bottom of that range
-  ([OEC.sh](https://oec.sh/odoo-pricing)). Our customers already pay this, and it
-  sets their reference for what software costs.
+### The anchors — both public, both verifiable
 
-The pricing rule that follows: **BatchTwin should cost more than the customer's
-Odoo subscription and an order of magnitude less than an enterprise MES.** Above
-Odoo because it carries more risk; far below MES because that is the whole point.
-
-### Per site, per year *[assumption]*
-
-| Plan | Scope | Price/year | Included |
-|---|---|---|---|
-| **Essential** | 1 line, ≤ 5 products | €7,200 | eBR, Part 11 signatures, audit trail, PDF, 10 named users |
-| **Standard** | 1 site, unlimited lines | €14,400 | + SPC & drift forecast, mass balance, deviations/CAPA, VÉRA inventory, 30 users |
-| **Enterprise** | Multi-site | €12,000/site + €18,000 group | + hybrid dashboard, SSO, priority SLA, unlimited users |
-
-**Why per site and not per user:** operators are shift workers on shared tablets.
-Per-user pricing punishes exactly the behaviour we want (everyone records their
-own actions under their own identity), and it would push customers to share
-logins — which destroys the Part 11 story we just built. Named users are capped
-generously; the cap is anti-abuse, not a revenue lever.
-
-Implied cost: at Standard, a 100-person site with 5 lines pays **€1,200/month** —
-roughly €12 per employee per month, comparable to their Odoo bill.
-
-### Services (where early revenue actually comes from)
-
-| Item | Price | Notes |
+| Anchor | Figure | Source |
 |---|---|---|
-| Implementation & dossier onboarding | €6,000–12,000 one-off | Scales with number of dossier templates |
-| Validation pack (URS, IQ, OQ, PQ) | €4,500 | The deliverable QA needs to defend the system |
-| Parallel-run support | €2,500/line | On-site during Phase 2 |
-| Training | €900/day | |
+| Enterprise eBR | MasterControl from **$1,000/month per feature**, extra per site | [Capterra](https://www.capterra.com/p/148011/MasterControl/) |
+| What the customer already pays for software | Odoo Enterprise **$8.95–$76.20/user/month**, Middle East at the bottom | [OEC.sh](https://oec.sh/odoo-pricing) |
 
-*[assumption: all service pricing. Anchor these against what a local Odoo
-integrator charges per day in Tunisia — that is the comparable the customer will
-mentally use.]*
+### The rule those anchors produce
+
+> Price **above** what the customer already pays for their ERP — BatchTwin
+> carries more regulatory risk than Odoo does — and **an order of magnitude
+> below** enterprise MES, because being affordable to a 100-person site is the
+> entire reason this product exists.
+
+That bounds the annual figure between roughly the customer's Odoo bill and a
+tenth of a MasterControl deployment. Landing inside that band is a commercial
+decision, not a calculation, and it should be made after three customer
+conversations rather than in a document.
+
+### Per site, not per user — and this one is not negotiable
+
+Operators are shift workers on shared tablets. Per-user pricing punishes exactly
+the behaviour the product depends on — every person recording their own actions
+under their own identity — and pushes customers toward shared logins, which
+destroys the Part 11 identity model the whole compliance story rests on.
+
+A pricing model that undermines the product's core claim is the wrong model at
+any price.
+
+### Structure to quote, values to fill
+
+| Plan | Scope | Annual |
+|---|---|---|
+| Essential | 1 line, limited product count | `____` |
+| Standard | 1 site, unlimited lines, + SPC, VÉRA, deviations | `____` |
+| Enterprise | Multi-site, + hybrid dashboard, SSO, priority SLA | `____ /site + ____ group` |
+
+Services (implementation, validation pack, parallel-run support, training) are
+where early revenue actually comes from, and they scale with the number of
+dossier templates rather than with seats. **Benchmark these against what a local
+Odoo integrator charges per day in Tunisia** — that is the comparable the
+customer will use mentally, and it is a number you can obtain this week.
 
 ### Support and maintenance
 
-Bundled into the subscription, not sold separately:
+Bundled into the subscription, not sold separately. **Regulatory-change updates
+are included**: a customer must never face a bill to stay compliant, and saying
+so removes the main objection to subscription pricing in a regulated industry.
 
-| Tier | Response | Included |
-|---|---|---|
-| Standard | Next business day | Updates, security patches, email support |
-| Priority (+25%) | 4 business hours | Phone, named contact, 2 validation refreshes/year |
-| Critical (Enterprise) | 1 hour, 24/7 | On-call, quarterly review |
-
-**Regulatory-change updates are included.** A customer must never face a bill to
-stay compliant — and knowing this is included removes the main objection to
-subscription pricing in a regulated industry.
-
-### Unit economics *[assumption]*
-
-At Standard, on-premise, per site:
-
-```
-Revenue                        €14,400/yr
-  Support & updates             -€2,400   (~2 days/yr engineering)
-  Validation refresh            -€1,200
-  Hosting                            €0   (customer's hardware)
-Gross margin                    €10,800   (75%)
-```
-
-Software margins are high; the constraint is **implementation capacity**, not
-cost. That shapes the growth plan: partner with existing Odoo integrators rather
-than hire implementation staff, because they already have the customer
-relationships and the ERP skills.
+Tiering by response time (next business day / same day / 1 hour) is standard and
+costs nothing to offer; the premium multiplier is a commercial decision, not a
+computed one.
 
 ---
 
@@ -295,7 +275,9 @@ open core with commercial compliance modules is a credible fallback.]*
    more than any marketing. Negotiate a case study in exchange for favourable
    first-year pricing.
 2. **Odoo integrator channel.** They already sell to the segment and are looking
-   for vertical differentiation. 20–30% margin on licence, they keep services.
+   for vertical differentiation. Margin split on licence with services retained
+   by the partner is the usual shape; the percentage is a negotiation, not a
+   figure to publish before one has happened.
 3. **Regulatory events.** The buyer attends GMP and pharma-quality conferences,
    not software ones.
 
@@ -309,20 +291,25 @@ fast bottom-up adoption is wrong.
 
 The weakest parts of this document, in order:
 
-1. **The ROI inputs.** Lots per year, QA review hours per lot, and real material
-   loss are all assumptions. One month of parallel-run data replaces every one of
-   them with measurement — and the loss figure is the one Odoo cannot produce.
-2. **Willingness to pay.** €14,400/year is an anchored guess, not a tested price.
-   Three customer conversations would replace the whole assumption.
-3. **Implementation effort.** €6,000–12,000 assumes onboarding takes 2–4 weeks.
-   Medicka's real onboarding is the only way to know.
-4. **On-premise preference.** Asserted from GMP conservatism, not measured.
-5. **Channel margin.** No integrator has been approached.
+1. **The four ROI inputs** (§3.4): lots/year, QA review hours, reviewer cost,
+   material cost per lot. Ask Medicka; all four are known to them today.
+2. **Real material loss.** Nobody has this number, including Medicka — Odoo
+   cannot produce it. One month of parallel-run data creates it for the first
+   time, and it is the most valuable single measurement in this whole plan.
+3. **Willingness to pay.** No price has been tested. Three customer
+   conversations replace the entire pricing section with evidence.
+4. **Implementation effort.** unknown until Medicka's onboarding is done. Price it
+   at cost for the first customer and measure.
+5. **On-premise preference.** Asserted from GMP conservatism, not measured.
+6. **Channel margin.** No integrator has been approached.
 
-A jury asking "how did you get to €14,400?" deserves: *"we anchored between what
-they already pay for Odoo and what enterprise MES costs, and we have not yet
-validated it with a customer."* That answer is respectable. A precise-sounding
-number with no basis is not.
+A jury asking "what does it cost?" deserves: *"we have not set a price yet. Here
+is the band it has to sit in and why — above their Odoo bill, an order of
+magnitude below enterprise MES — and here are the three customer conversations
+that will fix it."* That answer is respectable, and it is checkable.
+
+A precise-sounding number with no origin is not. It invites exactly one question,
+and there is no good answer to it.
 
 ---
 
