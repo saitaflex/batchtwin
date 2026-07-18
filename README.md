@@ -74,7 +74,7 @@ ollama serve && ollama pull llama3.2 && ollama pull nomic-embed-text
 ### Tests
 
 ```bash
-python -m pytest tests/ -q          # 77 passed, 8 skipped
+python -m pytest tests/ -q          # 91 passed, 8 skipped
 ```
 
 The 8 skips are the live-Odoo contract tests; see *Odoo* below for how to run them.
@@ -406,6 +406,35 @@ python -m backend.odoo_adapter --url https://erp.example.com --db medicka \
    whole chain to hide it — **the external anchor still catches it**.
 
 ---
+
+## Commercial model & rollout
+
+Two documents answer the questions that decide adoption rather than admiration:
+
+- **[docs/BUSINESS_MODEL.md](docs/BUSINESS_MODEL.md)** — who buys (the Pharmacien
+  Responsable, not the operator), why on-premise is the default, per-site pricing
+  anchored between what customers already pay for Odoo and what enterprise MES
+  costs, licensing, support tiers, unit economics. Every figure is either
+  referenced or explicitly marked as an assumption to validate.
+- **[docs/MIGRATION.md](docs/MIGRATION.md)** — how a site leaves paper **without
+  stopping production**.
+
+### Parallel run — enforced, not promised
+
+You never switch. A product line runs paper *and* BatchTwin for three lots; paper
+stays legally binding; QA compares; then that line alone cuts over.
+
+| Rule | Enforced by |
+|---|---|
+| A parallel lot names the paper dossier it shadows | `set_run_mode` refuses without `paper_ref` |
+| Only QA moves the legal record | role-gated to SMQ / PRT, server-side |
+| A parallel lot is **`qualified`**, never `released` | `sign_stage` |
+| A released lot's mode is frozen | `set_run_mode` |
+| The PDF says which record binds | stamped `QUALIFICATION` + *"NE FAIT PAS FOI"* naming the paper reference |
+| A line cannot cut over on bad evidence | `migration_status` needs 3 clean lots, lists blockers |
+
+First line live in ~8 weeks, whole site in ~4–5 months, zero production stoppage.
+Rollback is a role-gated field change, not a project.
 
 ## Honest limits
 

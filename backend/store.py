@@ -135,6 +135,11 @@ def init_db(reset: bool = False) -> None:
                 target_fill_g REAL, fill_tol_g REAL, fill_unit TEXT DEFAULT 'mL',
                 good_units INTEGER, mfg_date TEXT, expiry_date TEXT,
                 state TEXT NOT NULL DEFAULT 'open',   -- open | released | rejected
+                -- Migration: during a parallel run the PAPER dossier is the
+                -- legal record and this one shadows it. Nothing digital may
+                -- claim legal release until the product line is cut over.
+                run_mode TEXT NOT NULL DEFAULT 'live', -- parallel | live
+                paper_ref TEXT,                        -- the paper dossier it shadows
                 created_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS stage (
@@ -973,8 +978,17 @@ def sign_stage(batch_id: int, stage: str, user: str, role: str, meaning: str,
               {"stage": stage, "role": role, "meaning": meaning, "hash": h,
                "auth": "password re-verified"}, batch_id)
         if stage == "liberation":
-            c.execute("UPDATE batch SET state='released' WHERE id=?", (batch_id,))
-            audit(c, user, "batch.release", {"lot": _lot(c, batch_id)}, batch_id)
+            mode = c.execute("SELECT run_mode, paper_ref FROM batch WHERE id=?",
+                             (batch_id,)).fetchone()["run_mode"]
+            if mode == "parallel":
+                # Paper is still the legal record: mark the shadow complete.
+                c.execute("UPDATE batch SET state='qualified' WHERE id=?", (batch_id,))
+                audit(c, user, "batch.qualified",
+                      {"lot": _lot(c, batch_id),
+                       "note": "double saisie -- le dossier papier fait foi"}, batch_id)
+            else:
+                c.execute("UPDATE batch SET state='released' WHERE id=?", (batch_id,))
+                audit(c, user, "batch.release", {"lot": _lot(c, batch_id)}, batch_id)
     anchor_now()
     return {"stage": stage, "record_hash": h, "signed_by": u["full_name"]}
 
@@ -983,6 +997,14 @@ def _guard_release(c, batch_id, stage):
     """The core compliance gate. Liberation is refused while anything is open."""
     if stage != "liberation":
         return
+    # During a parallel run the paper dossier is the legal record. The digital
+    # signature is still captured -- that is the point of the exercise -- but it
+    # is recorded as a qualification signature, not a legal release.
+    mode = c.execute("SELECT run_mode, paper_ref FROM batch WHERE id=?",
+                     (batch_id,)).fetchone()
+    if mode and mode["run_mode"] == "parallel" and not mode["paper_ref"]:
+        raise PermissionError(
+            "double saisie: renseignez la reference du dossier papier avant de signer")
     open_chg = c.execute("SELECT COUNT(*) n FROM bom_change WHERE batch_id=? AND status='pending'",
                          (batch_id,)).fetchone()["n"]
     if open_chg:
@@ -1059,6 +1081,89 @@ def list_batches(product_code: str | None = None) -> list[dict]:
     q += " ORDER BY b.id ASC"
     with _conn() as c:
         return _rows(c, q, *args)
+
+
+# ----------------------------------------------------------------------------
+# Migration: parallel run
+# ----------------------------------------------------------------------------
+# You cannot stop a GMP line to change record systems, and you cannot let an
+# unvalidated system be the legal record. So a product line runs BOTH for an
+# agreed number of lots: paper stays legally binding, BatchTwin shadows it, and
+# QA compares them. Only when the divergence report is clean does the line cut
+# over. This is the standard CSV approach and it is modelled here, not promised
+# on a slide.
+RUN_MODES = {"parallel": "Double saisie — le dossier papier fait foi",
+             "live": "Dossier electronique — enregistrement legal"}
+QUALIFICATION_LOTS = 3          # clean lots required before a line may cut over
+
+
+def set_run_mode(batch_id: int, mode: str, user: str, role: str,
+                 paper_ref: str = "") -> dict:
+    """Switch a lot between shadowing paper and being the legal record.
+
+    Only QA decides this: it is the moment the legal record changes hands.
+    """
+    if mode not in RUN_MODES:
+        raise ValueError(f"mode inconnu: {mode}")
+    if role not in QA_ROLES:
+        raise PermissionError(
+            f"le role '{role}' ne peut pas changer le mode d'enregistrement "
+            f"(reserve a {', '.join(sorted(QA_ROLES))})")
+    if mode == "parallel" and not (paper_ref or "").strip():
+        raise ValueError("reference du dossier papier obligatoire en double saisie")
+    with _write_conn() as c:
+        b = c.execute("SELECT state, run_mode FROM batch WHERE id=?", (batch_id,)).fetchone()
+        if not b:
+            raise ValueError("lot introuvable")
+        if b["state"] == "released":
+            raise PermissionError("lot deja libere: le mode d'enregistrement est fige")
+        c.execute("UPDATE batch SET run_mode=?, paper_ref=? WHERE id=?",
+                  (mode, paper_ref.strip() or None, batch_id))
+        audit(c, user, "migration.run_mode",
+              {"from": b["run_mode"], "to": mode, "paper_ref": paper_ref}, batch_id)
+    anchor_now()
+    return {"run_mode": mode, "paper_ref": paper_ref}
+
+
+def migration_status(product_code: str | None = None) -> dict:
+    """Where each product line stands on its way off paper.
+
+    A line is ready to cut over once it has QUALIFICATION_LOTS parallel lots
+    that completed with no open deviation and a balanced packaging reconciliation.
+    """
+    with _conn() as c:
+        rows = _rows(c, """
+            SELECT p.code, p.name, b.id, b.lot_name, b.run_mode, b.state, b.paper_ref,
+                   (SELECT COUNT(*) FROM deviation d
+                     WHERE d.batch_id=b.id AND d.status='open') AS open_dev,
+                   (SELECT COUNT(*) FROM signature s WHERE s.batch_id=b.id) AS sigs
+              FROM batch b JOIN product p ON p.id=b.product_id
+             ORDER BY p.code, b.id""")
+    lines: dict[str, dict] = {}
+    for r in rows:
+        if product_code and r["code"] != product_code:
+            continue
+        L = lines.setdefault(r["code"], {
+            "code": r["code"], "name": r["name"], "parallel": 0, "live": 0,
+            "qualified": 0, "blocking": [], "lots": []})
+        L[r["run_mode"]] = L.get(r["run_mode"], 0) + 1
+        # A qualification lot is a parallel lot that went the whole way cleanly.
+        clean = r["run_mode"] == "parallel" and not r["open_dev"] and r["sigs"] >= len(STAGES)
+        if clean:
+            L["qualified"] += 1
+        elif r["run_mode"] == "parallel" and r["open_dev"]:
+            L["blocking"].append(f'{r["lot_name"]}: {r["open_dev"]} deviation(s) ouverte(s)')
+        L["lots"].append({"id": r["id"], "lot": r["lot_name"], "mode": r["run_mode"],
+                          "state": r["state"], "paper_ref": r["paper_ref"],
+                          "qualification": clean})
+    for L in lines.values():
+        L["required"] = QUALIFICATION_LOTS
+        L["ready_to_cut_over"] = L["qualified"] >= QUALIFICATION_LOTS and not L["blocking"]
+        L["stage"] = ("cutover" if L["live"] and not L["parallel"]
+                      else "ready" if L["ready_to_cut_over"]
+                      else "parallel" if L["parallel"] else "not_started")
+    return {"lines": sorted(lines.values(), key=lambda x: x["code"]),
+            "required_lots": QUALIFICATION_LOTS, "run_modes": RUN_MODES}
 
 
 def _norm_label(s: str) -> str:

@@ -221,5 +221,109 @@ class DossierAdaptationTests(unittest.TestCase):
         self.assertEqual(before, after)
 
 
+class MigrationTests(unittest.TestCase):
+    """Parallel run: you cannot stop a GMP line to change record systems, and you
+    cannot let an unvalidated system be the legal record. Both hold at once."""
+
+    CREDS = {"r_prod": ("prod.karim", "Fabrication#26"),
+             "r_cq": ("cq.sana", "Controle#26"),
+             "smq": ("smq.leila", "Qualite#26"),
+             "prt": ("prt.mona", "Pharma#26")}
+
+    def setUp(self):
+        _fresh()
+        self.odoo = MockOdoo()
+        self.of, self.oc = _orders(self.odoo)
+        with store._conn() as c:
+            self.spec = products.active(c, "PF201")
+
+    def _sign(self, bid, stage, role):
+        user, pw = self.CREDS[role]
+        return store.sign_stage(bid, stage, user, role, "ok", pw)
+
+    def _complete(self, bid):
+        for code, vals in (("PK-FLA-200", (792, 4, 4)), ("PK-GOB", (792, 4, 4)),
+                           ("PK-ETIQ", (795, 3, 2)), ("PK-ETUI", (795, 3, 2))):
+            for field, v in zip(("used", "returned", "waste"), vals):
+                store.set_packaging_recon(bid, code, field, v, "prod.karim")
+        for stage, role in (("fabrication", "r_prod"), ("cond_primaire", "r_prod"),
+                            ("cond_secondaire", "r_prod")):
+            self._sign(bid, stage, role)
+        store.add_qc_sample(bid, [200.0] * 10, "cq.sana")
+        self._sign(bid, "qualite", "r_cq")
+        self._sign(bid, "liberation", "prt")
+        return store.get_batch(bid)
+
+    def _new(self):
+        return store.create_batch_for_product(self.odoo, self.spec["id"],
+                                              self.of, self.oc, "system")
+
+    def test_batches_are_live_by_default(self):
+        self.assertEqual(store.get_batch(self._new())["run_mode"], "live")
+
+    def test_only_quality_assurance_moves_the_legal_record(self):
+        bid = self._new()
+        with self.assertRaises(PermissionError):
+            store.set_run_mode(bid, "parallel", "prod.karim", "r_prod", "DL-1")
+        with self.assertRaises(PermissionError):
+            store.set_run_mode(bid, "parallel", "cq.sana", "r_cq", "DL-1")
+        out = store.set_run_mode(bid, "parallel", "smq.leila", "smq", "DL-1")
+        self.assertEqual(out["run_mode"], "parallel")
+
+    def test_a_parallel_lot_must_name_the_paper_dossier_it_shadows(self):
+        bid = self._new()
+        with self.assertRaises(ValueError):
+            store.set_run_mode(bid, "parallel", "smq.leila", "smq", "   ")
+
+    def test_a_parallel_lot_is_qualified_never_released(self):
+        """The digital record must not claim legal release while paper is master."""
+        bid = self._new()
+        store.set_run_mode(bid, "parallel", "smq.leila", "smq", "DL-2026-0412")
+        b = self._complete(bid)
+        self.assertEqual(b["state"], "qualified")
+        self.assertNotEqual(b["state"], "released")
+
+    def test_a_live_lot_is_released_normally(self):
+        self.assertEqual(self._complete(self._new())["state"], "released")
+
+    def test_the_pdf_says_which_record_is_binding(self):
+        from backend import report
+        bid = self._new()
+        store.set_run_mode(bid, "parallel", "smq.leila", "smq", "DL-2026-0412")
+        pdf, _ = report.build_batch_pdf(bid)
+        import fitz
+        tmp = Path(tempfile.mkdtemp()) / "p.pdf"
+        tmp.write_bytes(pdf)
+        text = "".join(page.get_text() for page in fitz.open(tmp))
+        self.assertIn("QUALIFICATION", text)
+        self.assertIn("NE FAIT PAS FOI", text)
+        self.assertIn("DL-2026-0412", text, "the paper dossier must be named")
+
+    def test_a_released_lot_cannot_change_record_mode(self):
+        bid = self._new()
+        self._complete(bid)
+        with self.assertRaises(PermissionError):
+            store.set_run_mode(bid, "parallel", "smq.leila", "smq", "DL-9")
+
+    def test_a_line_needs_clean_qualification_lots_before_cutover(self):
+        for i in range(store.QUALIFICATION_LOTS):
+            bid = self._new()
+            store.set_run_mode(bid, "parallel", "smq.leila", "smq", f"DL-{i}")
+            self._complete(bid)
+        line = next(x for x in store.migration_status()["lines"] if x["code"] == "PF201")
+        self.assertEqual(line["qualified"], store.QUALIFICATION_LOTS)
+        self.assertTrue(line["ready_to_cut_over"])
+        self.assertEqual(line["stage"], "ready")
+
+    def test_an_open_deviation_holds_the_line_back(self):
+        bid = self._new()
+        store.set_run_mode(bid, "parallel", "smq.leila", "smq", "DL-X")
+        store.add_qc_sample(bid, [200, 200, 200, 200, 200, 200, 150, 200, 200, 200],
+                            "cq.sana")
+        line = next(x for x in store.migration_status()["lines"] if x["code"] == "PF201")
+        self.assertFalse(line["ready_to_cut_over"])
+        self.assertTrue(line["blocking"], "a lot with an open deviation must be named")
+
+
 if __name__ == "__main__":
     unittest.main()

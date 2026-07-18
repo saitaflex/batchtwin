@@ -668,6 +668,31 @@ def sync_stats(batch_id: int | None = None, me: dict = Me):
     return store.sync_stats(batch_id)
 
 
+# ---- migration: parallel run -> cutover -------------------------------------
+class RunModeBody(Actor):
+    mode: str                  # parallel | live
+    paper_ref: str = ""
+
+
+@app.get("/api/migration")
+def migration(product_code: str | None = None, me: dict = Me):
+    """Where each product line stands on its way off paper."""
+    return store.migration_status(product_code)
+
+
+@app.post("/api/batch/{batch_id}/run-mode")
+def run_mode(batch_id: int, body: RunModeBody,
+             me: dict = Depends(require_roles("smq", "prt"))):
+    """Hand the legal record from paper to BatchTwin, or back. QA only."""
+    try:
+        return store.set_run_mode(batch_id, body.mode, me["username"], me["role"],
+                                  body.paper_ref)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 # ---- deviations / CAPA ------------------------------------------------------
 @app.get("/api/batch/{batch_id}/deviations")
 def deviations(batch_id: int, me: dict = Me):

@@ -96,12 +96,19 @@ def build_batch_pdf(batch_id: int) -> tuple[bytes, str]:
 
     # ---- header block ------------------------------------------------------
     released = b["state"] == "released"
+    parallel = b.get("run_mode") == "parallel"
+    # During a parallel run this document must never be mistaken for the legal
+    # record -- the paper dossier still is. Say so on the stamp, not in a footnote.
+    stamp_text = ("QUALIFICATION" if parallel
+                  else "LOT LIBERE" if released else "EN COURS - NON LIBERE")
+    stamp_bg = (colors.HexColor("#6C63FF") if parallel
+                else GOOD if released else colors.HexColor("#c98500"))
     stamp = Table([[Paragraph(
-        "LOT LIBERE" if released else "EN COURS - NON LIBERE",
+        stamp_text,
         ParagraphStyle("stamp", fontName="Helvetica-Bold", fontSize=11,
                        textColor=colors.white, alignment=TA_CENTER))]],
         colWidths=[45 * mm])
-    stamp.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), GOOD if released else colors.HexColor("#c98500")),
+    stamp.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), stamp_bg),
                                ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                                ("ROUNDEDCORNERS", [4, 4, 4, 4])]))
     head = Table([[
@@ -111,6 +118,20 @@ def build_batch_pdf(batch_id: int) -> tuple[bytes, str]:
     ]], colWidths=[120 * mm, 50 * mm])
     head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("ALIGN", (1, 0), (1, 0), "RIGHT")]))
     story += [head, Spacer(1, 4), HRFlowable(width="100%", color=BLUE, thickness=1.4), Spacer(1, 8)]
+
+    if parallel:
+        banner = Table([[Paragraph(
+            "<b>DOUBLE SAISIE — CE DOCUMENT NE FAIT PAS FOI.</b><br/>"
+            f'Le dossier de lot papier <b>{b.get("paper_ref") or "-"}</b> reste '
+            "l'enregistrement legal de ce lot. Ce document sert a qualifier "
+            "BatchTwin par comparaison, conformement au plan de migration.",
+            ss["Cell"])]], colWidths=[170 * mm])
+        banner.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eeecff")),
+            ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#6C63FF")),
+            ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ("LEFTPADDING", (0, 0), (-1, -1), 9)]))
+        story += [banner, Spacer(1, 8)]
 
     # ---- metadata ----------------------------------------------------------
     meta = [
