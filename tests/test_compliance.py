@@ -445,5 +445,84 @@ class AssistantReadOnlyTests(unittest.TestCase):
         self.assertIn("Lot:", text)
 
 
+# --------------------------------------------------------------------------
+# API authorisation -- identity comes from the session, never the request body
+# --------------------------------------------------------------------------
+class ApiAuthorisationTests(unittest.TestCase):
+    """Regression guard for the worst bug this project has had.
+
+    Before this, 73 endpoints existed and one checked the session: an anonymous
+    caller could POST {"role": "smq"} and approve a formula change, or wipe the
+    database. The role checks were real; the role they checked was whatever the
+    caller claimed.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from fastapi.testclient import TestClient
+        from backend import main
+        _fresh_batch()
+        cls.client = TestClient(main.app)
+
+    def _token(self, user, password):
+        r = self.client.post("/api/login", json={"username": user, "password": password})
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()["token"]
+
+    def test_anonymous_callers_are_refused_everywhere(self):
+        attacks = [
+            ("post", "/api/batch/1/dispense/1", {"user": "x", "role": "r_prod",
+                                                 "dispensed": 999, "loss": 0}),
+            ("post", "/api/batch/1/units", {"user": "x", "role": "r_prod", "good_units": 99999}),
+            ("post", "/api/batch/1/changes", {"user": "x", "role": "smq", "kind": "add",
+                                              "material": "Poison", "new_qty": 50, "reason": "x"}),
+            ("post", "/api/products", {"user": "x", "role": "smq", "code": "HACK",
+                                       "name": "F", "dosage_form": "gelule"}),
+            ("post", "/api/seed?reset=true", {}),
+            ("get", "/api/audit", None),
+            ("get", "/api/batch/1", None),
+            ("get", "/api/batch/1/report.pdf", None),
+        ]
+        for method, url, payload in attacks:
+            r = (self.client.post(url, json=payload) if method == "post"
+                 else self.client.get(url))
+            self.assertEqual(r.status_code, 401, f"{method.upper()} {url} was not refused")
+
+    def test_the_claimed_role_in_the_body_is_ignored(self):
+        """A production operator cannot become QA by saying so."""
+        tok = self._token("prod.karim", "Fabrication#26")
+        h = {"Authorization": f"Bearer {tok}"}
+        r = self.client.post("/api/products", headers=h,
+                             json={"user": "smq.leila", "role": "smq", "code": "HACK2",
+                                   "name": "F", "dosage_form": "gelule"})
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("r_prod", r.json()["detail"])
+
+    def test_destructive_operations_require_quality_assurance(self):
+        prod = {"Authorization": f"Bearer {self._token('prod.karim', 'Fabrication#26')}"}
+        qa = {"Authorization": f"Bearer {self._token('smq.leila', 'Qualite#26')}"}
+        self.assertEqual(self.client.post("/api/seed?reset=true", json={},
+                                          headers=prod).status_code, 403)
+        self.assertEqual(self.client.post("/api/seed?reset=true", json={},
+                                          headers=qa).status_code, 200)
+
+    def test_the_audit_trail_records_the_session_user(self):
+        tok = self._token("prod.karim", "Fabrication#26")
+        h = {"Authorization": f"Bearer {tok}"}
+        bid = self.client.get("/api/batches", headers=h).json()[0]["id"]
+        line = self.client.get(f"/api/batch/{bid}", headers=h).json()["batch"]["dispense"][0]["id"]
+        # claim to be someone else in the body
+        self.client.post(f"/api/batch/{bid}/dispense/{line}", headers=h,
+                         json={"user": "prt.mona", "role": "prt", "dispensed": 5, "loss": 0})
+        entries = self.client.get(f"/api/audit?batch_id={bid}", headers=h).json()["entries"]
+        recorded = [e["user"] for e in entries if e["action"] == "dispense.record"]
+        self.assertIn("prod.karim", recorded)
+        self.assertNotIn("prt.mona", recorded, "the body must never set the actor")
+
+    def test_an_invalid_token_is_refused(self):
+        r = self.client.get("/api/batches", headers={"Authorization": "Bearer not-a-token"})
+        self.assertEqual(r.status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()

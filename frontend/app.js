@@ -5,6 +5,7 @@ const num = (v, d = 1) => v == null ? "—" : Number(v).toLocaleString(loc(), {m
 const T = (k) => window.t ? window.t(k) : k;
 const TF = (k, v) => window.tf ? window.tf(k, v) : k;
 
+const TOKEN_KEY = "bt_token";
 let BID = null;
 let FILL_UNIT = "mL";
 
@@ -13,8 +14,25 @@ let FILL_UNIT = "mL";
    There is no role dropdown any more: you cannot act as someone you are not. */
 let ME = null;
 const actor = () => ({user: ME.username, role: ME.role});
+/* Every call carries the session token. The server derives who you are from it
+   and ignores any identity in the body, so the UI cannot assert a role. */
+const authHeaders = () => {
+  const t = localStorage.getItem(TOKEN_KEY);
+  return t ? {Authorization: "Bearer " + t} : {};
+};
+
 const api = async (url, body) => {
-  const r = await fetch(url, body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
+  const opts = body
+    ? {method: "POST", headers: {"Content-Type": "application/json", ...authHeaders()},
+       body: JSON.stringify(body)}
+    : {headers: authHeaders()};
+  const r = await fetch(url, opts);
+  if (r.status === 401) {          // session gone: back to the gate, not a stack trace
+    localStorage.removeItem(TOKEN_KEY);
+    ME = null;
+    if (typeof showGate === "function") showGate(T("auth_expired"));
+    throw new Error(T("auth_expired"));
+  }
   if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.status); }
   return r.json();
 };
@@ -29,7 +47,6 @@ const STAGE_ORDER = ["fabrication", "cond_primaire", "cond_secondaire", "qualite
 const CHIP_KEYS = ["chip_next", "chip_blocked", "chip_summary", "chip_quality", "chip_loss", "chip_carbon"];
 
 /* ---------------- login gate ---------------- */
-const TOKEN_KEY = "bt_token";
 
 async function startSession() {
   const token = localStorage.getItem(TOKEN_KEY);
@@ -721,7 +738,7 @@ async function aiAsk(msg) {
   const log = $("#ai-log");
   try {
     const r = await fetch("/api/assistant/chat/stream", {
-      method: "POST", headers: {"Content-Type": "application/json"},
+      method: "POST", headers: {"Content-Type": "application/json", ...authHeaders()},
       body: JSON.stringify({batch_id: BID, message: msg, history: AI_HISTORY.slice(0, -1), lang: window.i18n ? window.i18n.lang : "fr"}),
     });
     if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.status); }
@@ -1370,7 +1387,9 @@ $("#tamper").onclick = async () => {
   await api(`/api/demo/tamper/${a.entries[3] ? a.entries[3].id : a.entries[0].id}`, {});
   refresh();
 };
-$("#pdf").onclick = () => { window.open(`/api/batch/${BID}/report.pdf`, "_blank"); };
+$("#pdf").onclick = () => window.open(
+  `/api/batch/${BID}/report.pdf?token=${encodeURIComponent(localStorage.getItem(TOKEN_KEY) || "")}`,
+  "_blank");
 $("#reset").onclick = async () => { await api("/api/seed?reset=true", {}); boot(); };
 document.addEventListener("click", closeMenus);
 document.querySelectorAll(".dd-menu").forEach(m => m.addEventListener("click", e => e.stopPropagation()));

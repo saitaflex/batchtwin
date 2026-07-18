@@ -9,7 +9,7 @@ import copy
 import random
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -92,6 +92,41 @@ class EnergyBody(Actor):
     source: str = "iot"
 
 
+# ---- authentication gate ----------------------------------------------------
+# Identity is taken from the SESSION, never from the request body. Trusting a
+# client-supplied {"user": ..., "role": ...} meant an anonymous caller could
+# approve a formula change as QA or wipe the database: the role checks were
+# real, but the role they checked was whatever the caller claimed.
+def _bearer(request: Request) -> str:
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("bearer "):
+        return header[7:].strip()
+    return request.query_params.get("token", "")
+
+
+def current_user(request: Request) -> dict:
+    """Resolve the caller from their session token, or refuse."""
+    with store._write_conn() as c:
+        try:
+            u = auth.resolve_session(c, _bearer(request))
+        except auth.AuthError as e:
+            raise HTTPException(401, str(e))
+        return {"username": u["username"], "full_name": u["full_name"], "role": u["role"]}
+
+
+def require_roles(*roles: str):
+    """Authorisation, enforced server-side rather than in the UI."""
+    def dep(me: dict = Depends(current_user)) -> dict:
+        if me["role"] not in roles:
+            raise HTTPException(
+                403, f"role '{me['role']}' non autorise (requis: {', '.join(roles)})")
+        return me
+    return dep
+
+
+Me = Depends(current_user)
+
+
 # ---- identity ---------------------------------------------------------------
 @app.post("/api/login")
 def api_login(body: LoginBody):
@@ -165,7 +200,7 @@ def _product_payload(body: ProductBody) -> tuple[dict, list[dict] | None]:
 
 
 @app.get("/api/products")
-def products_list(include_superseded: bool = False):
+def products_list(include_superseded: bool = False, me: dict = Me):
     with store._conn() as c:
         return {"products": products.listing(c, include_superseded),
                 "dosage_forms": products.DOSAGE_FORMS,
@@ -174,7 +209,7 @@ def products_list(include_superseded: bool = False):
 
 
 @app.get("/api/products/{product_id}")
-def product_get(product_id: int):
+def product_get(product_id: int, me: dict = Me):
     with store._conn() as c:
         p = products.get(c, product_id)
     if not p:
@@ -184,12 +219,12 @@ def product_get(product_id: int):
 
 
 @app.post("/api/products")
-def product_create(body: ProductBody):
+def product_create(body: ProductBody, me: dict = Depends(require_roles("smq", "prt"))):
     data, nutrients = _product_payload(body)
     try:
         with store._write_conn() as c:
-            p = products.create(c, data, nutrients or [], body.user)
-            store.audit(c, body.user, "product.create",
+            p = products.create(c, data, nutrients or [], me["username"])
+            store.audit(c, me["username"], "product.create",
                         {"code": p["code"], "version": p["version"], "name": p["name"]})
     except products.ProductError as e:
         raise HTTPException(400, str(e))
@@ -198,14 +233,15 @@ def product_create(body: ProductBody):
 
 
 @app.post("/api/products/{product_id}/version")
-def product_version(product_id: int, body: ProductBody):
+def product_version(product_id: int, body: ProductBody,
+                    me: dict = Depends(require_roles("smq", "prt"))):
     """Supersede a specification. The old version stays readable forever."""
     data, nutrients = _product_payload(body)
     try:
         with store._write_conn() as c:
             p = products.new_version(c, product_id, data, nutrients,
-                                     body.change_reason or "", body.user)
-            store.audit(c, body.user, "product.version",
+                                     body.change_reason or "", me["username"])
+            store.audit(c, me["username"], "product.version",
                         {"code": p["code"], "version": p["version"],
                          "reason": body.change_reason})
     except products.ProductError as e:
@@ -215,13 +251,14 @@ def product_version(product_id: int, body: ProductBody):
 
 
 @app.post("/api/products/{product_id}/edit")
-def product_edit(product_id: int, body: ProductBody):
+def product_edit(product_id: int, body: ProductBody,
+                 me: dict = Depends(require_roles("smq", "prt"))):
     """Non-specification fields only (SKU, barcode, storage note, remarks)."""
     data, _ = _product_payload(body)
     try:
         with store._write_conn() as c:
-            p = products.update_in_place(c, product_id, data, body.user)
-            store.audit(c, body.user, "product.edit", {"code": p["code"]})
+            p = products.update_in_place(c, product_id, data, me["username"])
+            store.audit(c, me["username"], "product.edit", {"code": p["code"]})
     except products.ProductError as e:
         raise HTTPException(400, str(e))
     store.anchor_now()
@@ -233,13 +270,13 @@ class ScanBody(BaseModel):
 
 
 @app.get("/api/scan/health")
-def scan_health():
+def scan_health(me: dict = Me):
     """Tells the UI whether to offer the camera OCR button at all."""
     return label_scan.available()
 
 
 @app.post("/api/scan/label")
-def scan_label(body: ScanBody):
+def scan_label(body: ScanBody, me: dict = Me):
     """OCR a nutrition label locally -> draft fields for review, never saved."""
     try:
         return label_scan.read_label(body.image)
@@ -248,7 +285,7 @@ def scan_label(body: ScanBody):
 
 
 @app.get("/api/products/barcode/{barcode}")
-def product_by_barcode(barcode: str):
+def product_by_barcode(barcode: str, me: dict = Me):
     """Resolve a scanned code against OUR OWN catalog.
 
     Deliberately not a third-party lookup: a manufacturer's product data is not
@@ -262,12 +299,12 @@ def product_by_barcode(barcode: str):
 
 # ---- meta -------------------------------------------------------------------
 @app.get("/api/roles")
-def roles():
+def roles(me: dict = Me):
     return {"roles": store.ROLES, "stages": store.STAGES, "stage_signer": store.STAGE_SIGNER}
 
 
 @app.post("/api/seed")
-def seed(reset: bool = True):
+def seed(reset: bool = True, me: dict = Depends(require_roles("smq", "prt"))):
     """Reset and create the demo Dossier de Lot from the (mock) Odoo OF + OC."""
     store.init_db(reset=reset)
     ofs = odoo.search_read("mrp.production", [("order_kind", "=", "fabrication")], ["id"])
@@ -289,7 +326,7 @@ def seed(reset: bool = True):
 
 # ---- batches ----------------------------------------------------------------
 @app.get("/api/batches")
-def batches(product_code: str | None = None):
+def batches(product_code: str | None = None, me: dict = Me):
     return store.list_batches(product_code)
 
 
@@ -299,7 +336,7 @@ class NewBatchBody(Actor):
 
 
 @app.post("/api/batches")
-def batch_create(body: NewBatchBody):
+def batch_create(body: NewBatchBody, me: dict = Me):
     """Open a Dossier de Lot for a product. The specification drives it."""
     ofs = odoo.search_read("mrp.production", [("order_kind", "=", "fabrication")], ["id"])
     ocs = odoo.search_read("mrp.production", [("order_kind", "=", "conditionnement")], ["id"])
@@ -307,14 +344,14 @@ def batch_create(body: NewBatchBody):
         raise HTTPException(400, "aucun ordre de fabrication disponible")
     try:
         bid = store.create_batch_for_product(odoo, body.product_id, ofs[0]["id"],
-                                             ocs[0]["id"], body.user, body.qty_target)
+                                             ocs[0]["id"], me["username"], body.qty_target)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {"batch_id": bid, "batch": store.get_batch(bid)}
 
 
 @app.get("/api/dossier")
-def dossier_index():
+def dossier_index(me: dict = Me):
     docs = []
     tasks = []
     for path in sorted(DOSSIER_DIR.glob("*")):
@@ -334,7 +371,7 @@ STATIONS = [
 
 
 @app.get("/api/batch/{batch_id}/equipment")
-def batch_equipment(batch_id: int):
+def batch_equipment(batch_id: int, me: dict = Me):
     b = store.get_batch(batch_id)
     if not b:
         raise HTTPException(404, "batch not found")
@@ -342,7 +379,7 @@ def batch_equipment(batch_id: int):
 
 
 @app.get("/api/batch/{batch_id}/codes")
-def codes(batch_id: int):
+def codes(batch_id: int, me: dict = Me):
     """Scannable code registry for the floor: the lot, each station, each material."""
     b = store.get_batch(batch_id)
     if not b:
@@ -367,7 +404,7 @@ def qr(data: str, scale: int = 6):
 
 
 @app.get("/api/batch/{batch_id}")
-def batch(batch_id: int):
+def batch(batch_id: int, me: dict = Me):
     b = store.get_batch(batch_id)
     if not b:
         raise HTTPException(404, "batch not found")
@@ -387,14 +424,14 @@ def _usl(b):
 
 
 @app.post("/api/batch/{batch_id}/checklist/{item_id}")
-def checklist(batch_id: int, item_id: int, body: ChecklistBody):
-    store.update_checklist(item_id, int(body.ok), body.note, body.user, body.escalate_to)
+def checklist(batch_id: int, item_id: int, body: ChecklistBody, me: dict = Me):
+    store.update_checklist(item_id, int(body.ok), body.note, me["username"], body.escalate_to)
     return {"ok": True}
 
 
 @app.post("/api/batch/{batch_id}/dispense/{line_id}")
-def dispense(batch_id: int, line_id: int, body: DispenseBody):
-    store.record_dispense(line_id, body.dispensed, body.loss, body.user)
+def dispense(batch_id: int, line_id: int, body: DispenseBody, me: dict = Me):
+    store.record_dispense(line_id, body.dispensed, body.loss, me["username"])
     return {"ok": True}
 
 
@@ -416,7 +453,7 @@ def _forms() -> list[dict]:
 
 
 @app.get("/api/forms")
-def forms_index(batch_id: int | None = None):
+def forms_index(batch_id: int | None = None, me: dict = Me):
     """The four real Medicka dossiers, parsed from the .docx into fillable specs."""
     forms = _forms()
     meta = [{k: f[k] for k in ("doc_key", "stage", "label", "title", "file", "field_count")}
@@ -430,7 +467,7 @@ def forms_index(batch_id: int | None = None):
 
 
 @app.get("/api/batch/{batch_id}/form/{doc_key}")
-def form_get(batch_id: int, doc_key: str):
+def form_get(batch_id: int, doc_key: str, me: dict = Me):
     form = next((f for f in _forms() if f["doc_key"] == doc_key), None)
     if not form:
         raise HTTPException(404, "dossier not found")
@@ -453,10 +490,10 @@ def form_get(batch_id: int, doc_key: str):
 
 
 @app.post("/api/batch/{batch_id}/form/{doc_key}")
-def form_save(batch_id: int, doc_key: str, body: FormFieldBody):
+def form_save(batch_id: int, doc_key: str, body: FormFieldBody, me: dict = Me):
     try:
         return store.save_form_field(batch_id, doc_key, body.field_key, body.value,
-                                     body.user, body.role)
+                                     me["username"], me["role"])
     except PermissionError as e:
         raise HTTPException(403, str(e))
 
@@ -480,7 +517,7 @@ class BomDecisionBody(Actor):
 
 
 @app.get("/api/materials")
-def materials():
+def materials(me: dict = Me):
     """Quality-approved material catalog (Odoo). You can only add from this list."""
     return {"materials": store.material_catalog(odoo),
             "tolerance_pct": store.MINOR_TOLERANCE_PCT,
@@ -489,15 +526,15 @@ def materials():
 
 
 @app.get("/api/batch/{batch_id}/changes")
-def bom_changes(batch_id: int):
+def bom_changes(batch_id: int, me: dict = Me):
     return {"changes": store.list_bom_changes(batch_id)}
 
 
 @app.post("/api/batch/{batch_id}/changes")
-def bom_change_request(batch_id: int, body: BomChangeBody):
+def bom_change_request(batch_id: int, body: BomChangeBody, me: dict = Me):
     try:
         return store.request_bom_change(
-            batch_id, body.kind, body.user, body.role, body.reason,
+            batch_id, body.kind, me["username"], me["role"], body.reason,
             dispense_id=body.dispense_id, material=body.material, unit=body.unit,
             unit_cost=body.unit_cost, supplier=body.supplier, rm_lot=body.rm_lot,
             rm_expiry=body.rm_expiry, new_qty=body.new_qty)
@@ -508,9 +545,9 @@ def bom_change_request(batch_id: int, body: BomChangeBody):
 
 
 @app.post("/api/batch/{batch_id}/changes/{change_id}")
-def bom_change_decide(batch_id: int, change_id: int, body: BomDecisionBody):
+def bom_change_decide(batch_id: int, change_id: int, body: BomDecisionBody, me: dict = Me):
     try:
-        return store.decide_bom_change(change_id, body.user, body.role, body.approve, body.note)
+        return store.decide_bom_change(change_id, me["username"], me["role"], body.approve, body.note)
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except ValueError as e:
@@ -518,14 +555,14 @@ def bom_change_decide(batch_id: int, change_id: int, body: BomDecisionBody):
 
 
 @app.post("/api/batch/{batch_id}/qc")
-def qc(batch_id: int, body: QCBody):
+def qc(batch_id: int, body: QCBody, me: dict = Me):
     if len(body.measurements) < 2:
         raise HTTPException(400, "need at least 2 measurements")
-    return store.add_qc_sample(batch_id, body.measurements, body.user)
+    return store.add_qc_sample(batch_id, body.measurements, me["username"])
 
 
 @app.post("/api/batch/{batch_id}/qc/simulate")
-def qc_sim(batch_id: int, body: QCSimBody):
+def qc_sim(batch_id: int, body: QCSimBody, me: dict = Me):
     """Generate one realistic 10-flacon contenance sample. Optional slow drift so
     the SPC forecast can predict an underfill before it happens."""
     b = store.get_batch(batch_id)
@@ -535,32 +572,32 @@ def qc_sim(batch_id: int, body: QCSimBody):
     std = tol / 3.5                                    # scales to any product/unit
     bias = -(target * 0.009) * existing if body.drift else 0.0  # drift per prior sample
     sample = [round(random.gauss(target + bias, std), 1) for _ in range(10)]
-    return store.add_qc_sample(batch_id, sample, body.user)
+    return store.add_qc_sample(batch_id, sample, me["username"])
 
 
 @app.post("/api/batch/{batch_id}/units")
-def units(batch_id: int, body: UnitsBody):
-    store.set_good_units(batch_id, body.good_units, body.user)
+def units(batch_id: int, body: UnitsBody, me: dict = Me):
+    store.set_good_units(batch_id, body.good_units, me["username"])
     return {"ok": True}
 
 
 @app.post("/api/batch/{batch_id}/energy")
-def energy(batch_id: int, body: EnergyBody):
+def energy(batch_id: int, body: EnergyBody, me: dict = Me):
     """IoT clamp / meter push (or manual entry) — one kWh reading for a stage."""
-    store.record_energy(batch_id, body.stage, body.machine, body.kwh, body.source, body.user)
+    store.record_energy(batch_id, body.stage, body.machine, body.kwh, body.source, me["username"])
     return {"ok": True}
 
 
 @app.post("/api/batch/{batch_id}/energy/simulate")
-def energy_sim(batch_id: int, body: Actor):
-    n = store.simulate_energy(batch_id, body.user)
+def energy_sim(batch_id: int, body: Actor, me: dict = Me):
+    n = store.simulate_energy(batch_id, me["username"])
     return {"readings": n}
 
 
 @app.post("/api/batch/{batch_id}/sign")
-def sign(batch_id: int, body: SignBody):
+def sign(batch_id: int, body: SignBody, me: dict = Me):
     try:
-        return store.sign_stage(batch_id, body.stage, body.user, body.role,
+        return store.sign_stage(batch_id, body.stage, me["username"], me["role"],
                                 body.meaning, body.password)
     except auth.AuthError as e:
         raise HTTPException(401, str(e))
@@ -584,7 +621,7 @@ class SyncBody(Actor):
 
 
 @app.post("/api/sync")
-def sync(body: SyncBody):
+def sync(body: SyncBody, me: dict = Me):
     """Replay work captured while the tablet was offline.
 
     Signing is deliberately absent: it needs a live password check, so it is
@@ -599,7 +636,7 @@ def sync(body: SyncBody):
             skipped.append(op.op_id)          # duplicate replay -> no double-apply
             continue
         try:
-            result = _apply_op(op, body.user, body.role)
+            result = _apply_op(op, me["username"], me["role"])
             store.mark_applied(op.op_id, op.kind, op.batch_id, op.client_at, result)
             applied.append(op.op_id)
         except Exception as e:                # keep going: one bad op must not
@@ -627,21 +664,21 @@ def _apply_op(op: SyncOp, user: str, role: str):
 
 
 @app.get("/api/sync/stats")
-def sync_stats(batch_id: int | None = None):
+def sync_stats(batch_id: int | None = None, me: dict = Me):
     return store.sync_stats(batch_id)
 
 
 # ---- deviations / CAPA ------------------------------------------------------
 @app.get("/api/batch/{batch_id}/deviations")
-def deviations(batch_id: int):
+def deviations(batch_id: int, me: dict = Me):
     return {"deviations": store.list_deviations(batch_id),
             "dispositions": store.DISPOSITIONS}
 
 
 @app.post("/api/batch/{batch_id}/deviation/{deviation_id}/close")
-def deviation_close(batch_id: int, deviation_id: int, body: DeviationCloseBody):
+def deviation_close(batch_id: int, deviation_id: int, body: DeviationCloseBody, me: dict = Me):
     try:
-        return store.close_deviation(deviation_id, body.user, body.role, body.password,
+        return store.close_deviation(deviation_id, me["username"], me["role"], body.password,
                                      body.disposition, body.root_cause, body.capa)
     except auth.AuthError as e:
         raise HTTPException(401, str(e))
@@ -653,15 +690,15 @@ def deviation_close(batch_id: int, deviation_id: int, body: DeviationCloseBody):
 
 # ---- packaging article reconciliation (DCOI / DCOII) ------------------------
 @app.get("/api/batch/{batch_id}/packaging")
-def packaging(batch_id: int):
+def packaging(batch_id: int, me: dict = Me):
     return store.packaging_balance(batch_id)
 
 
 @app.post("/api/batch/{batch_id}/packaging")
-def packaging_set(batch_id: int, body: PackagingBody):
+def packaging_set(batch_id: int, body: PackagingBody, me: dict = Me):
     try:
         return store.set_packaging_recon(batch_id, body.code, body.field,
-                                         body.value, body.user)
+                                         body.value, me["username"])
     except PermissionError as e:
         raise HTTPException(403, str(e))
     except ValueError as e:
@@ -670,7 +707,7 @@ def packaging_set(batch_id: int, body: PackagingBody):
 
 # ---- audit / data integrity -------------------------------------------------
 @app.get("/api/audit")
-def audit(batch_id: int | None = None):
+def audit(batch_id: int | None = None, me: dict = Me):
     return {"entries": store.get_audit(batch_id), "integrity": store.verify_chain()}
 
 
@@ -688,7 +725,7 @@ def assistant_health():
 
 
 @app.post("/api/assistant/chat")
-def assistant_chat(body: ChatBody):
+def assistant_chat(body: ChatBody, me: dict = Me):
     try:
         return assistant.chat(body.batch_id, body.message, body.history, body.lang)
     except assistant.AssistantOffline:
@@ -698,7 +735,7 @@ def assistant_chat(body: ChatBody):
 
 
 @app.post("/api/assistant/chat/stream")
-def assistant_chat_stream(body: ChatBody):
+def assistant_chat_stream(body: ChatBody, me: dict = Me):
     try:
         sources, gen = assistant.chat_stream(body.batch_id, body.message, body.history, body.lang)
     except assistant.AssistantOffline:
@@ -710,7 +747,7 @@ def assistant_chat_stream(body: ChatBody):
 
 
 @app.post("/api/assistant/report")
-def assistant_report(batch_id: int, lang: str = "fr"):
+def assistant_report(batch_id: int, lang: str = "fr", me: dict = Me):
     try:
         return assistant.generate_report(batch_id, lang)
     except assistant.AssistantOffline:
@@ -775,13 +812,13 @@ def vera_js():
 
 
 @app.post("/api/demo/tamper/{audit_id}")
-def tamper(audit_id: int):
+def tamper(audit_id: int, me: dict = Depends(require_roles("smq", "prt"))):
     res = store.demo_tamper(audit_id)
     return {"tamper": res, "integrity": store.verify_chain()}
 
 
 @app.get("/api/batch/{batch_id}/report.pdf")
-def report_pdf(batch_id: int):
+def report_pdf(batch_id: int, me: dict = Me):
     try:
         pdf, _ = report.build_batch_pdf(batch_id)
     except ValueError as e:
