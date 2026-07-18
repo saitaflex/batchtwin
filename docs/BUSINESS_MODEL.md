@@ -71,7 +71,132 @@ prefer on-premise — validate with 3 customer conversations.]*
 
 ---
 
-## 3. Pricing
+## 3. What the customer gets back — KPIs and ROI
+
+Pricing without value is just a number. This section separates three kinds of
+figure, and never blurs them:
+
+| Tag | Meaning |
+|---|---|
+| 📐 **Measured** | Computed by the code in this repository, from Medicka's real documents |
+| 📊 **Benchmark** | Published industry figure, cited |
+| 🔶 **Assumption** | Our estimate — validate before quoting |
+
+### 3.1 Measured today
+
+Produced by running the code against Medicka's four actual `.docx` dossiers:
+
+| KPI | Value | How |
+|---|---|---|
+| Dossier fields digitalised | **1,205** | `docx_forms.load_all()` across DFA, DCOI, DCOII, DCT |
+| Conformity checks made tappable | **135** | adjacent `S`/`NS`, `C`/`NC` cells merged into one control |
+| Blank pre-printed paper lines eliminated | **570** | runs of ≥3 identical empty rows collapsed to a growable template |
+| Dossier templates replaced by one adaptive form | **4 → 1** | the spec overlays the identification block; 7 fields per dossier |
+| Manual retyping of product identity per lot | **4 → 0** | it comes from the specification |
+
+The 570 figure is the one to say out loud. DCOI pre-prints a 92-row in-process
+log and DCT a 95-row compression table, because paper cannot grow. Those rows
+exist to be *mostly blank*.
+
+### 3.2 Mechanism proven, customer data pending
+
+The mass balance is real code on a real BOM. On the demo lot (800 units,
+simulated weighing within normal tolerances) it computes:
+
+```
+theoretical cost (Odoo)   399.89 EUR
+real consumed              401.06 EUR
+material loss              1.56 EUR      <- invisible to Odoo entirely
+true cost per unit         0.506 EUR
+yield                      99.1 %
+```
+
+🔶 **The mechanism is verified; the magnitude is not.** €1.56 comes from
+simulated weighing, not from Medicka's scales. The honest claim is not "we save
+you €1.56 a lot" — it is **"Odoo cannot see this number at all, and after
+BatchTwin you have it for every lot."** A month of real weighing turns this from
+a mechanism into a business case, and it is the single most valuable thing to
+collect during the parallel run.
+
+Same status for VÉRA on the seeded dataset: stock-truth gap 1.03 % / €571,
+expiry exposure €3,035, dead stock €3,457 across 19 materials. Deterministic and
+reproducible, but synthetic.
+
+### 3.3 Industry benchmarks
+
+Not our numbers — published, and cited as such:
+
+| Benchmark | Figure | Source |
+|---|---|---|
+| Batch release time reduction | **40–60 %** | [iFactory](https://ifactoryapp.com/blog/pharma-ebr-batch-record-automation) |
+| QA review effort | Materially reduced via review-by-exception | [MasterControl](https://www.mastercontrol.com/gxp-lifeline/benefits-electronic-batch-records-for-batch-record-review/) |
+| Error reduction, direct capture vs manual entry | up to **95 %** (one facility) | [Pharmaceutical Technology](https://www.pharmtech.com/view/electronic-batch-records-offer-advantages-beyond-automation) |
+
+Use these to frame the *category*, never as BatchTwin's measured results.
+
+### 3.4 ROI model for a site like Medicka
+
+🔶 Every input is an assumption until Medicka confirms it. Shown as arithmetic
+you can rerun with their real numbers, not as a conclusion.
+
+**Inputs** — 5 product lines, ~4 lots/line/month = **240 lots/year**; QA reviewer
+loaded cost €18/h; material cost €400/lot 📐 (from the demo BOM).
+
+| Effect | Basis | Annual |
+|---|---|---|
+| QA review time: 3 h → 1.5 h per lot | 📊 40–60 % reduction, taken at the **low** end | 240 × 1.5 h × €18 = **€6,480** |
+| Material loss made visible | 🔶 0.4 % of material spend, now measured and actionable | 240 × €400 × 0.4 % = **€384** |
+| Expiry write-off avoided | 🔶 30 % of VÉRA's €3,035 exposure | **€911** |
+| Deviation cost avoided | 🔶 2 fewer/yr × €1,200 | **€2,400** |
+| Faster release → working capital | 🔶 excluded — real but site-specific | — |
+| **Total** | | **≈ €10,200/yr** |
+
+Against **€14,400** Standard subscription plus **€9,000** one-off implementation:
+
+- Year 1: −€13,200 🔶
+- Year 2 onward: −€4,200/yr 🔶
+- **Payback: does not occur on efficiency alone.**
+
+### 3.5 The honest conclusion
+
+**Efficiency does not pay for this product at Medicka's scale, and pretending
+otherwise would be dismantled by any investor who checks the arithmetic.**
+
+What justifies the spend is risk:
+
+- **A regulatory finding on batch records** is existential for a GMP site — lost
+  certification, halted export, remediation costs far beyond the subscription.
+  BatchTwin's answer is the hash chain with external anchoring, Part 11
+  signatures, and a release gate that cannot be bypassed.
+- **A recall from an undetected fill drift.** The SPC forecast warns before the
+  specification is breached. One avoided recall exceeds a decade of subscription.
+- **Losing a customer audit.** Producing a complete, signed, timestamped dossier
+  in one click versus hunting four paper documents.
+
+This is insurance pricing, not efficiency pricing — which is exactly why the
+buyer is the person who signs release.
+
+ROI improves sharply with scale, because QA review time is the dominant term and
+it scales linearly with lots while the subscription does not:
+
+| Lots/year | Annual benefit 🔶 | vs €14,400 subscription |
+|---|---|---|
+| 240 (Medicka today) | €10,200 | −€4,200 |
+| **~400** | **€14,750** | **break-even** |
+| 600 | €20,500 | +€6,100 |
+| 700 | €23,300 | +€8,900 |
+
+So the growth path is **larger sites, not more features** — and at Medicka's
+current volume the Essential plan (€7,200) is the honest recommendation, with
+Standard justified once they pass ~200 lots/year or want VÉRA.
+
+**Say this to the jury.** "Efficiency alone doesn't pay it back at this volume;
+here's the arithmetic, and here's why they buy it anyway" is a stronger answer
+than a fabricated payback period.
+
+---
+
+## 4. Pricing
 
 ### Anchors
 
@@ -149,7 +274,7 @@ relationships and the ERP skills.
 
 ---
 
-## 4. Licensing
+## 5. Licensing
 
 **Commercial licence, source available to the customer.**
 
@@ -164,7 +289,7 @@ open core with commercial compliance modules is a credible fallback.]*
 
 ---
 
-## 5. Go to market
+## 6. Go to market
 
 1. **Medicka as reference customer.** One named GMP site in production is worth
    more than any marketing. Negotiate a case study in exchange for favourable
@@ -180,16 +305,19 @@ fast bottom-up adoption is wrong.
 
 ---
 
-## 6. What must be validated before quoting anyone
+## 7. What must be validated before quoting anyone
 
 The weakest parts of this document, in order:
 
-1. **Willingness to pay.** €14,400/year is an anchored guess, not a tested price.
+1. **The ROI inputs.** Lots per year, QA review hours per lot, and real material
+   loss are all assumptions. One month of parallel-run data replaces every one of
+   them with measurement — and the loss figure is the one Odoo cannot produce.
+2. **Willingness to pay.** €14,400/year is an anchored guess, not a tested price.
    Three customer conversations would replace the whole assumption.
-2. **Implementation effort.** €6,000–12,000 assumes onboarding takes 2–4 weeks.
+3. **Implementation effort.** €6,000–12,000 assumes onboarding takes 2–4 weeks.
    Medicka's real onboarding is the only way to know.
-3. **On-premise preference.** Asserted from GMP conservatism, not measured.
-4. **Channel margin.** No integrator has been approached.
+4. **On-premise preference.** Asserted from GMP conservatism, not measured.
+5. **Channel margin.** No integrator has been approached.
 
 A jury asking "how did you get to €14,400?" deserves: *"we anchored between what
 they already pay for Odoo and what enterprise MES costs, and we have not yet
@@ -204,3 +332,7 @@ number with no basis is not.
 - [Odoo Enterprise pricing by country — OEC.sh](https://oec.sh/odoo-pricing)
 - [Odoo official pricing](https://www.odoo.com/pricing)
 - [Pharma MES & eBR software landscape — IntuitionLabs](https://intuitionlabs.ai/articles/pharma-mes-ebr-software-gmp-manufacturing)
+- [eBR release-time reduction 40–60% — iFactory](https://ifactoryapp.com/blog/pharma-ebr-batch-record-automation)
+- [Review-by-exception and QA review effort — MasterControl](https://www.mastercontrol.com/gxp-lifeline/benefits-electronic-batch-records-for-batch-record-review/)
+- [Error reduction from direct capture — Pharmaceutical Technology](https://www.pharmtech.com/view/electronic-batch-records-offer-advantages-beyond-automation)
+- [eBR benefits overview — EY](https://www.ey.com/en_us/insights/life-sciences/electronic-batch-records-improve-pharma-manufacturing)
