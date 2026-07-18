@@ -99,10 +99,15 @@ def _write_conn() -> sqlite3.Connection:
     return c
 
 
+# Batch data: dropped by a demo reset.
 _TABLES = ["audit", "signature", "form_entry", "bom_change", "deviation",
            "packaging_recon", "applied_op", "energy", "qc_sample", "dispense",
-           "checklist", "stage", "batch", "product_nutrient", "product",
-           "session", "app_user"]
+           "checklist", "stage", "batch", "product_nutrient", "product"]
+
+# Identity: deliberately NOT dropped by a reset. Wiping the session table logs
+# out the very person who triggered the reset -- including, on a demo, whoever
+# is standing in front of a jury. Accounts and sessions outlive batch data.
+_IDENTITY_TABLES = ["session", "app_user"]
 
 # --- Offline capture -------------------------------------------------------
 # A tablet on a shop floor loses Wi-Fi. Data capture is queued locally and
@@ -132,8 +137,17 @@ MACHINES = {
 }
 
 
-def init_db(reset: bool = False) -> None:
+def init_db(reset: bool = False, purge_identity: bool = False) -> None:
+    """Create the schema. `reset` clears BATCH data only.
+
+    Accounts and sessions survive a reset on purpose -- see _IDENTITY_TABLES.
+    `purge_identity` is for tests and a genuine teardown, never for the demo
+    reset button.
+    """
     with _conn() as c:
+        if reset and purge_identity:
+            for t in _IDENTITY_TABLES:
+                c.execute(f"DROP TABLE IF EXISTS {t}")
         if reset:
             # Drop tables rather than unlink the file: unlink fails on Windows
             # while any connection holds the DB open (WinError 32).

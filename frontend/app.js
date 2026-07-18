@@ -296,7 +296,7 @@ async function renderSiteKpis() {
       <span class="t" title="${esc(p.title)}">${esc(p.title)}</span>
       <span class="bar"><span style="width:${Math.round(p.n / top * 100)}%"></span></span>
       <span style="color:var(--muted);font-size:11px">${p.share_pct}%</span></div>`).join("")
-    : `<div class="note">${T("kpi_no_dev")}</div>`;
+    : `<div class="note">✓ ${T("kpi_no_dev")}</div>`;
 
   const lines = d.migration.lines || [];
   $("#kpi-migration").innerHTML = lines.length ? lines.map(l => `
@@ -305,6 +305,79 @@ async function renderSiteKpis() {
       <span style="color:var(--muted);font-size:11px">${l.qualified}/${l.required}</span>
       <span class="st ${l.stage}">${T("mig_" + l.stage)}</span></div>`).join("")
     : `<div class="note">${T("kpi_no_lines")}</div>`;
+}
+
+/* ================== migration: which record is legally binding ==================
+   The whole parallel-run story was API-only. It is the answer to "how do we
+   leave paper without stopping production", so it has to be demonstrable. */
+function renderRunMode(d) {
+  const b = d.batch;
+  const isParallel = b.run_mode === "parallel";
+  const canChange = CHG_QA.includes(ME.role) && b.state !== "released";
+  const badge = $("#run-badge");
+  badge.className = "badge " + (isParallel ? "warn" : "good");
+  badge.textContent = isParallel ? T("run_parallel") : T("run_live");
+
+  $("#runmode").innerHTML = `
+    <div class="rm">
+      <button class="rm-opt ${isParallel ? "on" : ""}" id="rm-par" ${canChange ? "" : "disabled"}>
+        <span class="ic">📄</span>
+        <span class="tx"><b>${T("run_parallel")}</b><small>${T("run_parallel_sub")}</small></span>
+      </button>
+      <button class="rm-opt ${isParallel ? "" : "on"}" id="rm-live" ${canChange ? "" : "disabled"}>
+        <span class="ic">🔒</span>
+        <span class="tx"><b>${T("run_live")}</b><small>${T("run_live_sub")}</small></span>
+      </button>
+      <label class="rm-paper"><span>${T("run_paper_ref")}</span>
+        <input id="rm-ref" value="${esc(b.paper_ref || "")}"
+          placeholder="DL-2026-0412" ${canChange ? "" : "disabled"}></label>
+    </div>
+    <div class="rm-note ${isParallel ? "parallel" : ""}">
+      ${isParallel ? TF("run_note_parallel", {ref: esc(b.paper_ref || "—")}) : T("run_note_live")}
+    </div>
+    ${canChange ? "" : `<div class="rm-note">${
+      b.state === "released" ? T("run_locked_released") : T("run_qa_only")}</div>`}`;
+
+  if (!canChange) return;
+  const set = async (mode) => {
+    try {
+      await api(`/api/batch/${BID}/run-mode`,
+                {...actor(), mode, paper_ref: $("#rm-ref").value.trim()});
+      toast(mode === "parallel" ? T("run_now_parallel") : T("run_now_live"));
+    } catch (e) { alert("⚠ " + e.message); }
+    refresh();
+  };
+  $("#rm-par").onclick = () => set("parallel");
+  $("#rm-live").onclick = () => set("live");
+}
+
+/* ================== industry profile ==================
+   Answers "does this only do pharma?" with a button rather than a paragraph. */
+async function renderIndustry() {
+  let d;
+  try { d = await api("/api/industry"); } catch (e) { return; }
+  const active = d.active.key;
+  const canChange = CHG_QA.includes(ME.role);
+  $("#ind-badge").textContent = d.active.label;
+  $("#ind-badge").className = "badge good";
+  $("#industry").innerHTML = `<div class="ind-grid">` + d.available.map(p => `
+    <button class="ind ${p.key === active ? "on" : ""}" data-k="${p.key}" ${canChange ? "" : "disabled"}>
+      <b>${esc(p.label)}</b>
+      <small>${esc(p.regulation || "")}</small>
+      <span class="meta">${TF("ind_stages", {n: p.stages})}</span>
+    </button>`).join("") + `</div>` +
+    (canChange ? "" : `<div class="rm-note">${T("run_qa_only")}</div>`);
+
+  if (!canChange) return;
+  $("#industry").querySelectorAll(".ind").forEach(btn => btn.onclick = async () => {
+    if (btn.dataset.k === active) return;
+    if (!confirm(T("ind_confirm"))) return;
+    try {
+      const r = await api("/api/industry", {...actor(), key: btn.dataset.k});
+      toast(TF("ind_switched", {label: r.active.label}));
+    } catch (e) { alert("⚠ " + e.message); }
+    refresh();
+  });
 }
 
 /* ================== product catalog ==================
@@ -874,6 +947,7 @@ async function refresh() {
   refreshEquipment();
   loadForms();
   renderSiteKpis();
+  renderIndustry();
 }
 
 const STATUS_COLOR = {running: "var(--good)", warning: "var(--warning)", alarm: "var(--critical)"};
@@ -1020,6 +1094,7 @@ function render(d, a, docs, tasks) {
   renderChanges(d);
   renderDeviations(d);
   renderPackaging(d);
+  renderRunMode(d);
   renderSPC(d.spc);
   renderEnergy(d.energy);
   renderAudit(a);

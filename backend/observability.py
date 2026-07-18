@@ -114,8 +114,14 @@ limiter = RateLimiter()
 
 # Login is the endpoint worth spraying: cheap for the attacker, expensive for us
 # (PBKDF2 at 240k rounds is ~0.15 s of CPU, so it is also a DoS vector).
+# Limits are per CLIENT IP. A jury or a shop floor sits behind one NAT address,
+# so several people signing in look like one abusive client -- 10 attempts per
+# five minutes is four people logging in twice and then a locked door. The
+# account lockout in auth.py (5 failures, 15 min, per ACCOUNT) is what actually
+# stops password guessing; this limit exists to stop a flood, so it is set to a
+# level a real room of people cannot trip by working normally.
 LIMITS = {
-    "login": (10, 300),        # 10 attempts / 5 min / IP
+    "login": (60, 300),        # 60 attempts / 5 min / IP
     "scan": (20, 3600),        # vision OCR is minutes of CPU
     "ai": (60, 3600),
     "write": (600, 60),
