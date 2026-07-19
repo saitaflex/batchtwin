@@ -584,8 +584,13 @@ def qr(data: str, scale: int = 6):
     import io as _io
     import segno
     buf = _io.BytesIO()
-    segno.make(data, error="m").save(buf, kind="svg", scale=scale, border=2,
-                                     dark="#0b0b0b", light="#ffffff")
+    # make_qr(), NOT make(): segno.make() silently prefers Micro QR for short
+    # payloads like "BT:ST:qc", and Micro QR has one finder pattern instead of
+    # three. Most scanner apps and every BarcodeDetector implementation treat it
+    # as a separate format they do not support, so the printed floor codes were
+    # unreadable. Forcing a full QR costs a few millimetres of paper.
+    segno.make_qr(data, error="m").save(buf, kind="svg", scale=scale, border=2,
+                                        dark="#0b0b0b", light="#ffffff")
     return Response(buf.getvalue().decode("utf-8"), media_type="image/svg+xml")
 
 
@@ -1064,6 +1069,20 @@ def appjs():
 @app.get("/session.js")
 def session_js():
     return FileResponse(FRONTEND / "session.js", media_type="application/javascript")
+
+
+@app.get("/barcode.js")
+def barcode_js():
+    """EAN decoder used where the browser has no BarcodeDetector (Firefox,
+    Safari, most Chrome desktop builds). Served locally, never from a CDN."""
+    return FileResponse(FRONTEND / "barcode.js", media_type="application/javascript")
+
+
+@app.get("/qr.js")
+def qr_js():
+    """QR decoder, same fallback role as barcode.js -- without it the /floor
+    station and material codes cannot be scanned outside Chrome."""
+    return FileResponse(FRONTEND / "qr.js", media_type="application/javascript")
 
 
 @app.get("/i18n.js")

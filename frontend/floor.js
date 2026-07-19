@@ -67,15 +67,46 @@ function go(screen) { stopCamera(); S.screen = screen; render(); }
 
 /* ---------------- scan ---------------- */
 let scanStream = null, scanRAF = null;
-async function startCamera(video, onCode) {
-  if (!("BarcodeDetector" in window)) { toast(T("floor_code_not_supported")); return; }
-  try {
+/* Two readers, same as the product form: BarcodeDetector where it exists,
+ * otherwise the vendored decoders. Station codes are QR, so before qr.js was
+ * added this screen was unusable on Firefox, Safari and every iPad. */
+function makeFloorReader() {
+  if ("BarcodeDetector" in window) {
     const det = new BarcodeDetector({formats: ["qr_code", "code_128", "ean_13"]});
+    return async (video) => {
+      const cs = await det.detect(video);
+      return cs.length ? cs[0].rawValue : null;
+    };
+  }
+  if (!window.BTQr && !window.BTBarcode) return null;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", {willReadFrequently: true});
+  return (video) => {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return null;
+    const w = Math.min(720, vw);            // enough for a QR, cheap enough per frame
+    const h = Math.round(vh * (w / vw));
+    canvas.width = w; canvas.height = h;
+    ctx.drawImage(video, 0, 0, w, h);
+    const img = ctx.getImageData(0, 0, w, h);
+    // QR first: floor codes are QR, and a 1D pass over a QR is wasted work.
+    return (window.BTQr && window.BTQr.decodeImageData(img)) ||
+           (window.BTBarcode && window.BTBarcode.decodeImageData(img)) || null;
+  };
+}
+
+async function startCamera(video, onCode) {
+  const read = makeFloorReader();
+  if (!read) { toast(T("floor_code_not_supported")); return; }
+  try {
     scanStream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "environment"}});
     video.srcObject = scanStream; await video.play();
     const loop = async () => {
       if (!scanStream) return;
-      try { const cs = await det.detect(video); if (cs.length) { buzz(); stopCamera(); onCode(cs[0].rawValue); return; } } catch (e) {}
+      try {
+        const code = await read(video);
+        if (code) { buzz(); stopCamera(); onCode(code); return; }
+      } catch (e) {}
       scanRAF = requestAnimationFrame(loop);
     };
     loop();

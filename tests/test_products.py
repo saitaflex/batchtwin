@@ -77,7 +77,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_a_product_can_be_found_by_its_barcode(self):
         with store._conn() as c:
-            p = products.by_barcode(c, "6194000994015")
+            p = products.by_barcode(c, "6194000994019")
         self.assertIsNotNone(p)
         self.assertEqual(p["code"], "PF994")
 

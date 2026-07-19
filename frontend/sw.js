@@ -12,11 +12,11 @@
      * Immutable assets (icons, fonts, vendored libs) -> cache-first.
        They are content-addressed by filename and never change in place.
 */
-const VERSION = "v4";
+const VERSION = "v6";
 const SHELL_CACHE = "batchtwin-shell-" + VERSION;
 const ASSET_CACHE = "batchtwin-assets-" + VERSION;
 
-const SHELL = ["/", "/landing", "/app", "/app.js", "/i18n.js",
+const SHELL = ["/", "/landing", "/app", "/app.js", "/i18n.js", "/barcode.js", "/qr.js",
                "/floor", "/floor.js", "/vera", "/manifest.webmanifest"];
 
 const IMMUTABLE = (p) => p.startsWith("/icons/") || p.startsWith("/vendor/") ||

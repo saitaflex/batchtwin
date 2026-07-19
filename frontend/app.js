@@ -577,7 +577,9 @@ function openProductForm(mode, base) {
   $("#pf-nutrients").innerHTML = "";
   ((base && base.nutrients) || []).forEach(addNutRow);
   if (!$("#pf-nutrients").children.length) addNutRow();
-  $("#pf-cam").hidden = !("BarcodeDetector" in window);
+  // Shown whenever either reader is available -- which, with the vendored
+  // decoder loaded, is every browser that can open a camera.
+  $("#pf-cam").hidden = !("BarcodeDetector" in window) && !window.BTBarcode && !window.BTQr;
   $("#pf-ocr").hidden = !SCAN_OK;
   // Be honest about a weak local model rather than let it fail silently.
   $("#pf-scan-note").textContent = !SCAN_OK ? T("pr_scan_off")
@@ -603,39 +605,100 @@ function fillFromScan(fields) {
   toast(TF("pr_scan_done", {n}));
 }
 
-/* Barcode: decoded in the browser, then resolved against OUR catalog. */
+/* Barcode: decoded in the browser, then resolved against OUR catalog.
+ *
+ * Two readers. BarcodeDetector when the browser has it (Chrome/Edge) because it
+ * is hardware-accelerated and reads QR too; otherwise the vendored EAN decoder
+ * in barcode.js. Without the fallback this feature was dead on Firefox, Safari
+ * and every iPad -- which is most of the tablets a plant actually buys. */
+function makeReader() {
+  if ("BarcodeDetector" in window) {
+    const det = new BarcodeDetector({
+      formats: ["ean_13", "ean_8", "code_128", "qr_code", "upc_a"],
+    });
+    return {
+      native: true,
+      async read(video) {
+        const [hit] = await det.detect(video);
+        return hit ? hit.rawValue : null;
+      },
+    };
+  }
+  if (!window.BTBarcode && !window.BTQr) return null;
+  // Downscale to a fixed width: a 1080p frame costs far more to scan and buys
+  // no accuracy, since bar edges survive the resample.
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", {willReadFrequently: true});
+  return {
+    native: false,
+    read(video) {
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if (!vw || !vh) return null;
+      const w = Math.min(960, vw);
+      const h = Math.round(vh * (w / vw));
+      canvas.width = w; canvas.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
+      const img = ctx.getImageData(0, 0, w, h);
+      // 1D first here: a product label carries an EAN far more often than a QR.
+      return window.BTBarcode.decodeImageData(img) ||
+             (window.BTQr && window.BTQr.decodeImageData(img)) || null;
+    },
+  };
+}
+
 async function scanBarcode() {
-  if (!("BarcodeDetector" in window)) { alert(T("pr_scan_nobarcode")); return; }
+  const reader = makeReader();
+  if (!reader) { alert(T("pr_scan_nobarcode")); return; }
+
   const video = $("#pf-video");
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: "environment"}});
   } catch (e) { alert(T("pr_scan_nocam")); return; }
   video.hidden = false; video.srcObject = stream; await video.play();
-  const det = new BarcodeDetector({formats: ["ean_13", "ean_8", "code_128", "qr_code", "upc_a"]});
-  const stop = () => { stream.getTracks().forEach(t => t.stop()); video.hidden = true; };
+
+  const note = $("#pf-scan-note");
+  const prevNote = note.textContent;
+  if (!reader.native) note.textContent = T("pr_scan_fallback");
+
+  const stop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    video.hidden = true;
+    note.textContent = prevNote;
+  };
   const deadline = Date.now() + 25000;
+
   (async function tick() {
     if (Date.now() > deadline) { stop(); toast(T("pr_scan_timeout")); return; }
-    try {
-      const [hit] = await det.detect(video);
-      if (hit) {
-        stop();
-        const code = hit.rawValue;
-        $("#pf-barcode").value = code;
-        $("#pf-barcode").classList.add("scanned");
-        const found = await api(`/api/products/barcode/${encodeURIComponent(code)}`);
-        if (found.found) {
-          // Scanning your own product: offer to version it rather than duplicate.
-          if (confirm(TF("pr_scan_exists", {name: found.product.name, v: found.product.version}))) {
-            openProductForm("version", found.product);
-          }
-        } else { toast(TF("pr_scan_code", {code})); }
-        return;
-      }
-    } catch (e) { /* keep trying */ }
+    let code = null;
+    try { code = await reader.read(video); } catch (e) { /* keep trying */ }
+    if (code) {
+      stop();
+      await onScannedCode(String(code).trim());
+      return;
+    }
     requestAnimationFrame(tick);
   })();
+}
+
+async function onScannedCode(code) {
+  $("#pf-barcode").value = code;
+  $("#pf-barcode").classList.add("scanned");
+  // A UPC-A label prints 12 digits but decodes as a 13-digit EAN with a leading
+  // zero, so look up both forms rather than miss our own catalogue entry.
+  const forms = [code];
+  if (/^0\d{12}$/.test(code)) forms.push(code.slice(1));
+  for (const c of forms) {
+    const found = await api(`/api/products/barcode/${encodeURIComponent(c)}`);
+    if (found.found) {
+      // Scanning your own product: offer to version it rather than duplicate.
+      if (confirm(TF("pr_scan_exists", {name: found.product.name, v: found.product.version}))) {
+        openProductForm("version", found.product);
+      }
+      return;
+    }
+  }
+  toast(TF("pr_scan_code", {code}));
 }
 
 /* Nutrition label: OCR'd by the local vision model, reviewed before saving. */
